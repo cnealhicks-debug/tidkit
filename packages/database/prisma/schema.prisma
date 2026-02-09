@@ -1,0 +1,245 @@
+// TidKit Database Schema
+// PostgreSQL database for user data, textures, and projects
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+// ==========================================
+// USER & AUTHENTICATION
+// ==========================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts          Account[]
+  sessions          Session[]
+  textures          Texture[]
+  projects          Project[]
+  storageConnections StorageConnection[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ==========================================
+// STORAGE
+// ==========================================
+
+enum StorageProviderType {
+  LOCAL
+  GOOGLE_DRIVE
+  ICLOUD
+}
+
+model StorageConnection {
+  id           String              @id @default(cuid())
+  userId       String
+  provider     StorageProviderType
+  accessToken  String?             @db.Text
+  refreshToken String?             @db.Text
+  tokenExpiry  DateTime?
+  isDefault    Boolean             @default(false)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@map("storage_connections")
+}
+
+// ==========================================
+// TEXTURES
+// ==========================================
+
+enum TextureCategory {
+  ROOFING
+  SIDING
+  BRICK
+  STONE
+  WOOD
+  METAL
+  CONCRETE
+  WINDOWS
+  DOORS
+  SIGNS
+  GROUND
+  LANDSCAPE
+  ROAD
+  INDUSTRIAL
+  OTHER
+}
+
+model Texture {
+  id          String          @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  category    TextureCategory
+  tags        String[]
+
+  // File info
+  fileUrl       String
+  thumbnailUrl  String?
+  mimeType      String
+  fileSize      Int
+  storageProvider StorageProviderType @default(LOCAL)
+  storageId     String?         // External storage file ID
+
+  // Scale metadata
+  scaleName     String          // e.g., "HO", "N", "O"
+  scaleRatio    Int             // e.g., 87 for HO
+  realWidth     Float           // Real-world width in inches
+  realHeight    Float           // Real-world height in inches
+  pixelWidth    Int             // Image width in pixels
+  pixelHeight   Int             // Image height in pixels
+  dpi           Int             // Calculated DPI for true scale
+
+  // Processing
+  isSeamless    Boolean         @default(false)
+  originalId    String?         // Reference to original if this is processed
+  processedAt   DateTime?
+
+  // Metadata
+  isPublic      Boolean         @default(false)
+  downloads     Int             @default(0)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  // Relations
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  original      Texture?        @relation("ProcessedTextures", fields: [originalId], references: [id])
+  processed     Texture[]       @relation("ProcessedTextures")
+  projectTextures ProjectTexture[]
+
+  @@index([userId])
+  @@index([category])
+  @@index([scaleName])
+  @@index([isPublic])
+  @@map("textures")
+}
+
+// ==========================================
+// PROJECTS (Building Designer)
+// ==========================================
+
+model Project {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+
+  // Building parameters (JSON blob for flexibility)
+  buildingParams Json
+
+  // Export files
+  svgUrl      String?
+  pdfUrl      String?
+  gltfUrl     String?
+
+  // Metadata
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  textures    ProjectTexture[]
+
+  @@index([userId])
+  @@index([isPublic])
+  @@map("projects")
+}
+
+model ProjectTexture {
+  id         String  @id @default(cuid())
+  projectId  String
+  textureId  String
+  surface    String  // e.g., "walls", "roof", "door", "window"
+
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  texture    Texture @relation(fields: [textureId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, surface])
+  @@map("project_textures")
+}
+
+// ==========================================
+// SHARED TEMPLATES
+// ==========================================
+
+model BuildingTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  category    String   // residential, commercial, industrial, etc.
+
+  // Building parameters
+  params      Json
+
+  // Preview
+  thumbnailUrl String?
+
+  // Metadata
+  isOfficial  Boolean  @default(false)
+  authorId    String?
+  downloads   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@map("building_templates")
+}

@@ -1,0 +1,381 @@
+/**
+ * TidKit Builder - Building Types
+ * Type definitions for parametric building generation
+ */
+
+// Re-export shared types
+export type { ModelScale } from '@tidkit/config';
+import { MODEL_SCALES as SHARED_SCALES, type ModelScale } from '@tidkit/config';
+
+export type RoofStyle = 'flat' | 'gable' | 'hip' | 'shed' | 'gambrel' | 'mansard' | 'saltbox';
+
+// Roof style descriptions for UI
+export const ROOF_STYLE_INFO: Record<RoofStyle, { label: string; description: string; icon: string }> = {
+  flat: { label: 'Flat', description: 'Simple flat roof', icon: '▭' },
+  gable: { label: 'Gable', description: 'Classic triangular roof', icon: '△' },
+  hip: { label: 'Hip', description: 'All sides slope down', icon: '◇' },
+  shed: { label: 'Shed', description: 'Single sloped roof', icon: '⟋' },
+  gambrel: { label: 'Gambrel', description: 'Barn-style dual slope', icon: '⌂' },
+  mansard: { label: 'Mansard', description: 'Four-sided steep lower slope', icon: '⎈' },
+  saltbox: { label: 'Saltbox', description: 'Asymmetric gable', icon: '⟍' },
+};
+
+export interface BuildingDimensions {
+  // Real-world dimensions in feet
+  width: number;   // Front to back
+  depth: number;   // Side to side
+  height: number;  // Wall height (not including roof)
+}
+
+// Floor/story configuration
+export interface FloorConfig {
+  id: string;
+  name: string;
+  height: number;        // Height of this floor in feet
+  hasFloor: boolean;     // Include floor panel (false for ground floor usually)
+  hasCeiling: boolean;   // Include ceiling panel
+}
+
+// Interior surface options
+export interface InteriorConfig {
+  enabled: boolean;
+  wallThickness: number;  // In inches (for tab generation)
+  includeFloors: boolean;
+  includeCeilings: boolean;
+}
+
+export interface RoofParams {
+  style: RoofStyle;
+  pitch: number;     // Roof pitch in degrees (0 for flat)
+  overhang: number;  // Overhang in feet
+}
+
+export interface BuildingParams {
+  dimensions: BuildingDimensions;
+  roof: RoofParams;
+  scale: ModelScale;
+  openings: Opening[];
+  // Multi-story support
+  floors: FloorConfig[];
+  interior: InteriorConfig;
+}
+
+export interface TextureAssignment {
+  frontWall?: string;
+  sideWalls?: string;
+  backWall?: string;
+  roof?: string;
+  foundation?: string;
+  trim?: string;
+}
+
+// Opening types for windows and doors
+export type OpeningType = 'window' | 'door';
+
+export interface Opening {
+  id: string;
+  type: OpeningType;
+  wall: 'front' | 'back' | 'left' | 'right';
+  floor: number;  // 0-indexed floor number (0 = ground floor)
+  // Position from bottom-left of wall section, in feet
+  x: number;  // distance from left edge
+  y: number;  // distance from floor level (0 for doors)
+  // Dimensions in feet
+  width: number;
+  height: number;
+  // Optional label
+  label?: string;
+}
+
+// Common opening presets
+export const OPENING_PRESETS: { name: string; type: OpeningType; width: number; height: number; y: number }[] = [
+  { name: 'Standard Door', type: 'door', width: 3, height: 7, y: 0 },
+  { name: 'Double Door', type: 'door', width: 6, height: 7, y: 0 },
+  { name: 'Garage Door', type: 'door', width: 9, height: 8, y: 0 },
+  { name: 'Standard Window', type: 'window', width: 3, height: 4, y: 3 },
+  { name: 'Large Window', type: 'window', width: 5, height: 4, y: 3 },
+  { name: 'Small Window', type: 'window', width: 2, height: 2, y: 4 },
+  { name: 'Tall Window', type: 'window', width: 2, height: 6, y: 2 },
+];
+
+// Panel definitions for unfolding
+export interface Panel {
+  id: string;
+  name: string;
+  vertices: [number, number][];  // 2D vertices in model units
+  foldEdges: { from: number; to: number; type: 'mountain' | 'valley' }[];
+  cutEdges: { from: number; to: number }[];
+  connectsTo?: string;
+  textureId?: string;
+}
+
+export interface UnfoldedBuilding {
+  panels: Panel[];
+  glueTabWidth: number;  // In model units
+  totalWidth: number;
+  totalHeight: number;
+}
+
+// Re-export shared scales
+export const MODEL_SCALES = SHARED_SCALES;
+
+// Default floor configuration (single story)
+export const DEFAULT_FLOORS: FloorConfig[] = [
+  { id: 'floor-0', name: 'Ground Floor', height: 10, hasFloor: false, hasCeiling: false },
+];
+
+// Default interior configuration
+export const DEFAULT_INTERIOR: InteriorConfig = {
+  enabled: false,
+  wallThickness: 0.125,  // 1/8 inch
+  includeFloors: true,
+  includeCeilings: false,
+};
+
+// Default building parameters
+export const DEFAULT_BUILDING: BuildingParams = {
+  dimensions: {
+    width: 30,   // 30 feet wide
+    depth: 20,   // 20 feet deep
+    height: 10,  // 10 feet tall walls (single story)
+  },
+  roof: {
+    style: 'gable',
+    pitch: 30,
+    overhang: 1,
+  },
+  scale: MODEL_SCALES.find(s => s.name === 'HO')!,
+  openings: [],
+  floors: DEFAULT_FLOORS,
+  interior: DEFAULT_INTERIOR,
+};
+
+// Helper to create multi-story floor configurations
+export function createFloors(storyCount: number, floorHeight: number = 10): FloorConfig[] {
+  return Array.from({ length: storyCount }, (_, i) => ({
+    id: `floor-${i}`,
+    name: i === 0 ? 'Ground Floor' : `Floor ${i + 1}`,
+    height: floorHeight,
+    hasFloor: i > 0, // Ground floor typically doesn't need a floor panel
+    hasCeiling: i < storyCount - 1, // Top floor gets ceiling from roof
+  }));
+}
+
+// Calculate total building height from floors
+export function calculateTotalHeight(floors: FloorConfig[]): number {
+  return floors.reduce((sum, floor) => sum + floor.height, 0);
+}
+
+// =============================================================================
+// Architectural Items & Accessories
+// =============================================================================
+
+// Categories of architectural items
+export type AccessoryCategory = 'exterior' | 'structural' | 'decorative' | 'signage';
+
+// Accessory placement positions
+export type AccessoryPosition =
+  | 'wall-front' | 'wall-back' | 'wall-left' | 'wall-right'
+  | 'roof' | 'ground' | 'corner';
+
+// Base accessory type
+export interface Accessory {
+  id: string;
+  type: AccessoryType;
+  category: AccessoryCategory;
+  name: string;
+  // Position in feet from building origin
+  position: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  // Rotation in degrees
+  rotation: number;
+  // Scale multiplier (1 = normal)
+  scale: number;
+  // Which wall/surface it's attached to (if applicable)
+  attachedTo?: AccessoryPosition;
+  // Custom properties depending on type
+  properties?: Record<string, any>;
+}
+
+// Specific accessory types
+export type AccessoryType =
+  // Exterior
+  | 'fence' | 'gate' | 'steps' | 'ramp' | 'platform'
+  // Structural
+  | 'chimney' | 'vent' | 'skylight' | 'dormer' | 'awning'
+  // Decorative
+  | 'shutters' | 'flower-box' | 'light-fixture' | 'trim' | 'column'
+  // Signage
+  | 'sign-flat' | 'sign-hanging' | 'sign-awning' | 'house-number';
+
+// Accessory preset definitions
+export interface AccessoryPreset {
+  type: AccessoryType;
+  category: AccessoryCategory;
+  name: string;
+  description: string;
+  // Default dimensions in feet
+  dimensions: { width: number; height: number; depth: number };
+  // Default properties
+  defaultProperties?: Record<string, any>;
+  // Icon or preview
+  icon: string;
+}
+
+// Accessory presets library
+export const ACCESSORY_PRESETS: AccessoryPreset[] = [
+  // Exterior
+  {
+    type: 'fence',
+    category: 'exterior',
+    name: 'Picket Fence',
+    description: 'Traditional wooden picket fence section',
+    dimensions: { width: 8, height: 4, depth: 0.5 },
+    defaultProperties: { style: 'picket', posts: true },
+    icon: '🪻',
+  },
+  {
+    type: 'gate',
+    category: 'exterior',
+    name: 'Fence Gate',
+    description: 'Swinging gate for fence',
+    dimensions: { width: 4, height: 4, depth: 0.5 },
+    defaultProperties: { style: 'picket', hinged: 'left' },
+    icon: '🚪',
+  },
+  {
+    type: 'steps',
+    category: 'exterior',
+    name: 'Porch Steps',
+    description: 'Entry stairs with 3 steps',
+    dimensions: { width: 5, height: 2, depth: 3 },
+    defaultProperties: { stepCount: 3, railing: true },
+    icon: '🪜',
+  },
+  {
+    type: 'platform',
+    category: 'exterior',
+    name: 'Loading Dock',
+    description: 'Raised platform for loading',
+    dimensions: { width: 12, height: 4, depth: 6 },
+    defaultProperties: { railing: true, ramp: false },
+    icon: '📦',
+  },
+
+  // Structural
+  {
+    type: 'chimney',
+    category: 'structural',
+    name: 'Brick Chimney',
+    description: 'Traditional brick chimney',
+    dimensions: { width: 2, height: 6, depth: 2 },
+    defaultProperties: { style: 'brick', cap: true },
+    icon: '🏭',
+  },
+  {
+    type: 'vent',
+    category: 'structural',
+    name: 'Roof Vent',
+    description: 'Roof ventilation unit',
+    dimensions: { width: 1.5, height: 1, depth: 1.5 },
+    defaultProperties: { style: 'box' },
+    icon: '💨',
+  },
+  {
+    type: 'skylight',
+    category: 'structural',
+    name: 'Skylight',
+    description: 'Roof-mounted window',
+    dimensions: { width: 3, height: 0.5, depth: 4 },
+    defaultProperties: { style: 'flat', panes: 1 },
+    icon: '☀️',
+  },
+  {
+    type: 'awning',
+    category: 'structural',
+    name: 'Window Awning',
+    description: 'Protective awning over window/door',
+    dimensions: { width: 6, height: 1, depth: 3 },
+    defaultProperties: { style: 'sloped', color: 'striped' },
+    icon: '🏕️',
+  },
+
+  // Decorative
+  {
+    type: 'shutters',
+    category: 'decorative',
+    name: 'Window Shutters',
+    description: 'Pair of decorative shutters',
+    dimensions: { width: 1, height: 4, depth: 0.25 },
+    defaultProperties: { style: 'louvered', pair: true },
+    icon: '🪟',
+  },
+  {
+    type: 'flower-box',
+    category: 'decorative',
+    name: 'Flower Box',
+    description: 'Window-mounted planter',
+    dimensions: { width: 3, height: 0.5, depth: 0.75 },
+    defaultProperties: { flowers: true },
+    icon: '🌸',
+  },
+  {
+    type: 'light-fixture',
+    category: 'decorative',
+    name: 'Wall Light',
+    description: 'Exterior wall-mounted light',
+    dimensions: { width: 0.5, height: 1, depth: 0.5 },
+    defaultProperties: { style: 'lantern' },
+    icon: '💡',
+  },
+  {
+    type: 'column',
+    category: 'decorative',
+    name: 'Porch Column',
+    description: 'Supporting column for porch/overhang',
+    dimensions: { width: 0.75, height: 10, depth: 0.75 },
+    defaultProperties: { style: 'round', base: true, capital: true },
+    icon: '🏛️',
+  },
+
+  // Signage
+  {
+    type: 'sign-flat',
+    category: 'signage',
+    name: 'Wall Sign',
+    description: 'Flat wall-mounted sign',
+    dimensions: { width: 6, height: 2, depth: 0.25 },
+    defaultProperties: { text: 'SHOP', style: 'rectangular' },
+    icon: '🪧',
+  },
+  {
+    type: 'sign-hanging',
+    category: 'signage',
+    name: 'Hanging Sign',
+    description: 'Double-sided hanging sign',
+    dimensions: { width: 3, height: 2, depth: 0.25 },
+    defaultProperties: { text: 'OPEN', bracket: 'ornate' },
+    icon: '🏪',
+  },
+  {
+    type: 'sign-awning',
+    category: 'signage',
+    name: 'Awning Sign',
+    description: 'Storefront awning with text',
+    dimensions: { width: 12, height: 2, depth: 4 },
+    defaultProperties: { text: 'STORE', color: 'green' },
+    icon: '🎪',
+  },
+  {
+    type: 'house-number',
+    category: 'signage',
+    name: 'House Number',
+    description: 'Address number plaque',
+    dimensions: { width: 1, height: 0.5, depth: 0.1 },
+    defaultProperties: { number: '123', style: 'modern' },
+    icon: '🔢',
+  },
+];
