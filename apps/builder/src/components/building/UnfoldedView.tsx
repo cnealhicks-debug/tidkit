@@ -8,6 +8,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useBuildingStore } from '@/stores/buildingStore';
 import { unfoldBuilding, patternToSVG, UnfoldedPattern } from '@/lib/unfold';
+import { generateAssemblyGuide } from '@/lib/assembly-guide';
 import { MATERIAL_PROPERTIES, DEFAULT_MATERIAL } from '@/types/building';
 
 interface UnfoldedViewProps {
@@ -16,18 +17,27 @@ interface UnfoldedViewProps {
 
 export function UnfoldedView({ buildingName = 'Building' }: UnfoldedViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { params } = useBuildingStore();
+  const { params, accessories } = useBuildingStore();
   const [zoom, setZoom] = useState(100);
+  const [showGuide, setShowGuide] = useState(false);
 
-  // Generate unfolded pattern
+  // Generate unfolded pattern (including accessory panels)
   const pattern = useMemo(() => {
-    return unfoldBuilding(params, buildingName);
-  }, [params, buildingName]);
+    return unfoldBuilding(params, buildingName, accessories);
+  }, [params, buildingName, accessories]);
+
+  const hasDetails = (pattern.accessoryPanels?.length || 0) + (pattern.detailPanels?.length || 0) > 0;
 
   // Generate SVG
   const svgContent = useMemo(() => {
     return patternToSVG(pattern, 96); // 96 DPI for screen display
   }, [pattern]);
+
+  // Generate assembly guide SVG
+  const guideSvg = useMemo(() => {
+    if (!showGuide || !hasDetails) return '';
+    return generateAssemblyGuide(pattern);
+  }, [pattern, showGuide, hasDetails]);
 
   return (
     <div ref={containerRef} className="w-full h-full bg-white overflow-auto p-4">
@@ -61,6 +71,18 @@ export function UnfoldedView({ buildingName = 'Building' }: UnfoldedViewProps) {
           </div>
         </div>
         <div className="flex gap-2">
+          {hasDetails && (
+            <button
+              onClick={() => setShowGuide(!showGuide)}
+              className={`px-3 py-1.5 text-sm rounded ${
+                showGuide
+                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {showGuide ? 'Pattern' : 'Assembly Guide'}
+            </button>
+          )}
           <button
             onClick={() => downloadSVG(pattern)}
             className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -76,12 +98,12 @@ export function UnfoldedView({ buildingName = 'Building' }: UnfoldedViewProps) {
         </div>
       </div>
 
-      {/* Pattern preview - scalable */}
+      {/* Pattern or Assembly Guide preview */}
       <div className="border border-gray-300 bg-white rounded-lg overflow-auto max-h-[60vh]">
         <div
           className="inline-block"
           style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }}
-          dangerouslySetInnerHTML={{ __html: svgContent }}
+          dangerouslySetInnerHTML={{ __html: showGuide && guideSvg ? guideSvg : svgContent }}
         />
       </div>
 
@@ -91,6 +113,12 @@ export function UnfoldedView({ buildingName = 'Building' }: UnfoldedViewProps) {
         {pattern.glueTabs.length > 0 && <> • <strong>{pattern.glueTabs.length}</strong> glue tabs</>}
         {pattern.facadePanels && pattern.facadePanels.length > 0 && (
           <> • <strong>{pattern.facadePanels.length}</strong> facade sheets</>
+        )}
+        {pattern.accessoryPanels && pattern.accessoryPanels.length > 0 && (
+          <> • <strong>{pattern.accessoryPanels.length}</strong> accessory pieces</>
+        )}
+        {pattern.detailPanels && pattern.detailPanels.length > 0 && (
+          <> • <strong>{pattern.detailPanels.length}</strong> detail pieces</>
         )}
         <span className="ml-2 text-gray-400">|</span>
         <span className="ml-2">

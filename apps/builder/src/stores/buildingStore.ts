@@ -109,6 +109,11 @@ interface BuildingState {
   setJointMethod: (method: JointMethod) => void;
   setGenerateFacades: (generate: boolean) => void;
 
+  // Actions - Architectural Details
+  setTrimStyle: (style: import('@/types/building').TrimStyle) => void;
+  setWallDetails: (details: Partial<import('@/types/building').WallDetails>) => void;
+  setRoofTrim: (trim: Partial<import('@/types/building').RoofTrim>) => void;
+
   // Actions - Accessories
   addAccessory: (accessory: Accessory) => void;
   updateAccessory: (id: string, updates: Partial<Accessory>) => void;
@@ -379,6 +384,28 @@ export const useBuildingStore = create<BuildingState>((set, get) => ({
         },
       };
     }),
+
+  // Architectural detail actions
+  setTrimStyle: (style) =>
+    set((state) => ({
+      params: { ...state.params, trimStyle: style },
+    })),
+
+  setWallDetails: (details) =>
+    set((state) => ({
+      params: {
+        ...state.params,
+        wallDetails: { ...{ cornerBoards: false, baseboard: false, beltCourse: false, wainscoting: false, quoins: false }, ...state.params.wallDetails, ...details },
+      },
+    })),
+
+  setRoofTrim: (trim) =>
+    set((state) => ({
+      params: {
+        ...state.params,
+        roofTrim: { ...{ fascia: false, bargeboard: false, ridgeCap: false }, ...state.params.roofTrim, ...trim },
+      },
+    })),
 
   // Accessory actions
   addAccessory: (accessory) =>

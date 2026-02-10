@@ -184,6 +184,77 @@ export interface RoofParams {
   overhang: number;  // Overhang in feet
 }
 
+// =============================================================================
+// Trim & Detail Types
+// =============================================================================
+
+export type TrimStyle = 'none' | 'simple' | 'colonial' | 'craftsman' | 'victorian';
+
+export interface TrimProfile {
+  label: string;
+  description: string;
+  frameWidth: number;    // Inches — frame strip width around opening
+  sillDepth: number;     // Inches — sill projection depth
+  sillExtension: number; // Inches — how far sill extends past frame on each side
+  headerHeight: number;  // Inches — header/lintel height above opening frame
+  headerExtension: number; // Inches — header extends past frame on each side
+}
+
+export const TRIM_PROFILES: Record<TrimStyle, TrimProfile | null> = {
+  none: null,
+  simple: {
+    label: 'Simple',
+    description: 'Clean flat frame on all sides',
+    frameWidth: 0.04,
+    sillDepth: 0.02,
+    sillExtension: 0,
+    headerHeight: 0.04,
+    headerExtension: 0,
+  },
+  colonial: {
+    label: 'Colonial',
+    description: 'Classic trim with header cap and extended sill',
+    frameWidth: 0.06,
+    sillDepth: 0.04,
+    sillExtension: 0.03,
+    headerHeight: 0.08,
+    headerExtension: 0.03,
+  },
+  craftsman: {
+    label: 'Craftsman',
+    description: 'Bold flat trim with thick sill and header board',
+    frameWidth: 0.08,
+    sillDepth: 0.06,
+    sillExtension: 0.04,
+    headerHeight: 0.1,
+    headerExtension: 0.04,
+  },
+  victorian: {
+    label: 'Victorian',
+    description: 'Ornate trim with decorative header and sill brackets',
+    frameWidth: 0.06,
+    sillDepth: 0.05,
+    sillExtension: 0.04,
+    headerHeight: 0.12,
+    headerExtension: 0.04,
+  },
+};
+
+export interface WallDetails {
+  cornerBoards: boolean;
+  baseboard: boolean;
+  beltCourse: boolean;
+  wainscoting: boolean;
+  quoins: boolean;
+}
+
+export interface RoofTrim {
+  fascia: boolean;
+  bargeboard: boolean;
+  ridgeCap: boolean;
+  bargeboardStyle?: 'plain' | 'scalloped' | 'gingerbread';
+}
+
 export interface BuildingParams {
   dimensions: BuildingDimensions;
   roof: RoofParams;
@@ -194,6 +265,10 @@ export interface BuildingParams {
   interior: InteriorConfig;
   // Material type (optional — defaults to paper for backward compatibility)
   material?: MaterialConfig;
+  // Architectural details (optional — all default to off)
+  trimStyle?: TrimStyle;
+  wallDetails?: WallDetails;
+  roofTrim?: RoofTrim;
 }
 
 export interface TextureAssignment {

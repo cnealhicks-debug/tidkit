@@ -12,6 +12,10 @@ import {
 } from '@/types/building';
 import type { Panel, GlueTab, UnfoldedPattern, Point2D, PanelOpening } from './unfold';
 import { compensateButtJoint, compensateMiterJoint, generateSlotTabJoints } from './material-compensation';
+import { generateAccessoryPanels } from './accessory-patterns';
+import { generateOpeningTrim } from './opening-trim';
+import { generateWallDetails } from './wall-details';
+import { generateRoofTrimPanels } from './roof-trim';
 
 // =============================================================================
 // Strategy Interface
@@ -21,7 +25,7 @@ export interface UnfoldStrategy {
   /**
    * Generate the unfolded 2D pattern for the given building parameters.
    */
-  unfold(params: BuildingParams, name: string): UnfoldedPattern;
+  unfold(params: BuildingParams, name: string, accessories?: import('@/types/building').Accessory[]): UnfoldedPattern;
 }
 
 // =============================================================================
@@ -86,9 +90,11 @@ function buildPatternResult(
   params: BuildingParams,
   name: string,
   assemblySteps?: string[],
-  facadePanels?: Panel[]
+  facadePanels?: Panel[],
+  accessoryPanels?: Panel[],
+  detailPanels?: Panel[]
 ): UnfoldedPattern {
-  const allPanels = [...panels, ...(facadePanels || [])];
+  const allPanels = [...panels, ...(facadePanels || []), ...(accessoryPanels || []), ...(detailPanels || [])];
   const totalWidth =
     Math.max(
       ...allPanels.map((p) => p.position.x + Math.max(...p.vertices.map((v) => v.x)))
@@ -117,6 +123,8 @@ function buildPatternResult(
     materialType: material.type,
     assemblySteps: assemblySteps || materialProps.assemblySteps,
     facadePanels,
+    accessoryPanels,
+    detailPanels,
   };
 }
 
@@ -125,7 +133,7 @@ function buildPatternResult(
 // =============================================================================
 
 export class PaperUnfoldStrategy implements UnfoldStrategy {
-  unfold(params: BuildingParams, name: string): UnfoldedPattern {
+  unfold(params: BuildingParams, name: string, accessories?: import('@/types/building').Accessory[]): UnfoldedPattern {
     const { dimensions, roof, scale, openings = [] } = params;
 
     const feetToModelInches = 12 / scale.ratio;
@@ -509,7 +517,47 @@ export class PaperUnfoldStrategy implements UnfoldStrategy {
       maxHeight = currentY + roofPanelLength + GLUE_TAB_WIDTH;
     }
 
-    return buildPatternResult(panels, glueTabs, params, name);
+    // Generate accessory panels
+    const maxStructuralY = Math.max(
+      ...panels.map((p) => p.position.y + Math.max(...p.vertices.map((v) => v.y)))
+    );
+    const accessoryPanels = accessories && accessories.length > 0
+      ? generateAccessoryPanels(accessories, params, maxStructuralY + PANEL_SPACING * 2)
+      : undefined;
+
+    // Generate detail panels (opening trim + wall details + roof trim)
+    const allAbove = [...panels, ...(accessoryPanels || [])];
+    const maxAboveY = allAbove.length > 0
+      ? Math.max(...allAbove.map((p) => p.position.y + Math.max(...p.vertices.map((v) => v.y))))
+      : maxStructuralY;
+
+    let detailPanels: Panel[] = [];
+    let detailY = maxAboveY + PANEL_SPACING * 2;
+
+    // Opening trim
+    const trimStyle = params.trimStyle || 'none';
+    if (trimStyle !== 'none' && openings.length > 0) {
+      const trimPanels = generateOpeningTrim(openings, params, trimStyle, detailY);
+      detailPanels.push(...trimPanels);
+      if (trimPanels.length > 0) {
+        detailY = Math.max(...trimPanels.map(p => p.position.y + Math.max(...p.vertices.map(v => v.y)))) + PANEL_SPACING;
+      }
+    }
+
+    // Wall details
+    const wallDetailPanels = generateWallDetails(params, detailY);
+    if (wallDetailPanels.length > 0) {
+      detailPanels.push(...wallDetailPanels);
+      detailY = Math.max(...wallDetailPanels.map(p => p.position.y + Math.max(...p.vertices.map(v => v.y)))) + PANEL_SPACING;
+    }
+
+    // Roof trim
+    const roofTrimPanels = generateRoofTrimPanels(params, detailY);
+    if (roofTrimPanels.length > 0) {
+      detailPanels.push(...roofTrimPanels);
+    }
+
+    return buildPatternResult(panels, glueTabs, params, name, undefined, undefined, accessoryPanels, detailPanels.length > 0 ? detailPanels : undefined);
   }
 }
 
@@ -518,7 +566,7 @@ export class PaperUnfoldStrategy implements UnfoldStrategy {
 // =============================================================================
 
 export class SeparatePanelUnfoldStrategy implements UnfoldStrategy {
-  unfold(params: BuildingParams, name: string): UnfoldedPattern {
+  unfold(params: BuildingParams, name: string, accessories?: import('@/types/building').Accessory[]): UnfoldedPattern {
     const { dimensions, roof, scale, openings = [] } = params;
     const material = params.material || DEFAULT_MATERIAL;
     const thickness = material.thickness;
@@ -898,7 +946,45 @@ export class SeparatePanelUnfoldStrategy implements UnfoldStrategy {
       this.applySlotTabJoints(panels, thickness);
     }
 
-    return buildPatternResult(panels, glueTabs, params, name, undefined, facadePanels);
+    // Generate accessory panels
+    const allStructural = [...panels, ...(facadePanels || [])];
+    const maxStructuralY2 = allStructural.length > 0
+      ? Math.max(...allStructural.map((p) => p.position.y + Math.max(...p.vertices.map((v) => v.y))))
+      : 1;
+    const accessoryPanels = accessories && accessories.length > 0
+      ? generateAccessoryPanels(accessories, params, maxStructuralY2 + PANEL_SPACING * 2)
+      : undefined;
+
+    // Generate detail panels (opening trim + wall details + roof trim)
+    const allAbove2 = [...allStructural, ...(accessoryPanels || [])];
+    const maxAboveY2 = allAbove2.length > 0
+      ? Math.max(...allAbove2.map((p) => p.position.y + Math.max(...p.vertices.map((v) => v.y))))
+      : maxStructuralY2;
+
+    let detailPanels2: Panel[] = [];
+    let detailY2 = maxAboveY2 + PANEL_SPACING * 2;
+
+    const trimStyle = params.trimStyle || 'none';
+    if (trimStyle !== 'none' && openings.length > 0) {
+      const trimPanels = generateOpeningTrim(openings, params, trimStyle, detailY2);
+      detailPanels2.push(...trimPanels);
+      if (trimPanels.length > 0) {
+        detailY2 = Math.max(...trimPanels.map(p => p.position.y + Math.max(...p.vertices.map(v => v.y)))) + PANEL_SPACING;
+      }
+    }
+
+    const wallDetailPanels = generateWallDetails(params, detailY2);
+    if (wallDetailPanels.length > 0) {
+      detailPanels2.push(...wallDetailPanels);
+      detailY2 = Math.max(...wallDetailPanels.map(p => p.position.y + Math.max(...p.vertices.map(v => v.y)))) + PANEL_SPACING;
+    }
+
+    const roofTrimPanels = generateRoofTrimPanels(params, detailY2);
+    if (roofTrimPanels.length > 0) {
+      detailPanels2.push(...roofTrimPanels);
+    }
+
+    return buildPatternResult(panels, glueTabs, params, name, undefined, facadePanels, accessoryPanels, detailPanels2.length > 0 ? detailPanels2 : undefined);
   }
 
   /**
@@ -997,10 +1083,10 @@ export class ScoreAndFoldUnfoldStrategy implements UnfoldStrategy {
    * Similar to paper strategy but fold lines become 'score' type
    * and facade sheets are generated separately.
    */
-  unfold(params: BuildingParams, name: string): UnfoldedPattern {
+  unfold(params: BuildingParams, name: string, accessories?: import('@/types/building').Accessory[]): UnfoldedPattern {
     // Use paper strategy as base, then modify fold types
     const paperStrategy = new PaperUnfoldStrategy();
-    const result = paperStrategy.unfold(params, name);
+    const result = paperStrategy.unfold(params, name, accessories);
 
     // Convert fold edges to score type
     for (const panel of result.panels) {
@@ -1063,7 +1149,7 @@ export class ScoreAndFoldUnfoldStrategy implements UnfoldStrategy {
       result.facadePanels = facadePanels;
 
       // Recalculate total dimensions
-      const allPanels = [...result.panels, ...facadePanels];
+      const allPanels = [...result.panels, ...facadePanels, ...(result.accessoryPanels || [])];
       result.width =
         Math.max(
           ...allPanels.map((p) => p.position.x + Math.max(...p.vertices.map((v) => v.x)))

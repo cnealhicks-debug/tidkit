@@ -41,6 +41,10 @@ export interface Panel {
   rotation: number; // degrees
   // Openings (cutouts) in this panel
   openings?: PanelOpening[];
+  // Panel grouping for multi-layer output
+  panelGroup?: 'structural' | 'facade' | 'accessory' | 'detail';
+  // Link back to source accessory (for accessory panels)
+  parentAccessoryId?: string;
 }
 
 export interface GlueTab {
@@ -71,15 +75,23 @@ export interface UnfoldedPattern {
   assemblySteps: string[];
   // Facade panels (for non-paper materials with separate texture sheets)
   facadePanels?: Panel[];
+  // Accessory panels (flat pattern pieces for accessories)
+  accessoryPanels?: Panel[];
+  // Detail panels (trim, wall details, roof trim)
+  detailPanels?: Panel[];
 }
 
 /**
  * Convert building parameters to unfolded 2D pattern.
  * Dispatches to the appropriate strategy based on material type.
  */
-export function unfoldBuilding(params: BuildingParams, name: string = 'Building'): UnfoldedPattern {
+export function unfoldBuilding(
+  params: BuildingParams,
+  name: string = 'Building',
+  accessories?: import('@/types/building').Accessory[]
+): UnfoldedPattern {
   const strategy = getUnfoldStrategy(params.material);
-  return strategy.unfold(params, name);
+  return strategy.unfold(params, name, accessories);
 }
 
 /**
@@ -92,6 +104,8 @@ export function patternToSVG(pattern: UnfoldedPattern, dpi: number = 300): strin
 
   const material = pattern.materialType || 'paper';
   const hasFacades = pattern.facadePanels && pattern.facadePanels.length > 0;
+  const hasAccessories = pattern.accessoryPanels && pattern.accessoryPanels.length > 0;
+  const hasDetails = pattern.detailPanels && pattern.detailPanels.length > 0;
 
   let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
@@ -105,6 +119,8 @@ export function patternToSVG(pattern: UnfoldedPattern, dpi: number = 300): strin
     .glue-tab { stroke: #888888; stroke-width: 0.01; fill: #f0f0f0; }
     .panel { fill: #ffffff; stroke: none; }
     .facade-panel { fill: #fffff0; stroke: none; }
+    .accessory-panel { fill: #fff8f0; stroke: none; }
+    .detail-panel { fill: #f0fff0; stroke: none; }
     .opening { fill: #e8e8e8; stroke: #000000; stroke-width: 0.02; }
     .opening-door { fill: #d4c4a8; stroke: #000000; stroke-width: 0.02; }
     .opening-window { fill: #b8d4e8; stroke: #000000; stroke-width: 0.02; }
@@ -133,10 +149,23 @@ export function patternToSVG(pattern: UnfoldedPattern, dpi: number = 300): strin
 
   // Draw facade panels if present
   if (hasFacades) {
-    // Find where facade section starts for a section label
     const facadeMinY = Math.min(...pattern.facadePanels!.map(p => p.position.y));
     svg += `  <text x="0.5" y="${(facadeMinY - 0.2).toFixed(4)}" class="section-title">Facade Sheets (print on paper, glue onto structural panels)</text>\n`;
     svg += renderPanels(pattern.facadePanels!, 'facade-panel');
+  }
+
+  // Draw accessory panels if present
+  if (hasAccessories) {
+    const accessoryMinY = Math.min(...pattern.accessoryPanels!.map(p => p.position.y));
+    svg += `  <text x="0.5" y="${(accessoryMinY - 0.2).toFixed(4)}" class="section-title">Accessory Pieces (cut and assemble separately)</text>\n`;
+    svg += renderPanels(pattern.accessoryPanels!, 'accessory-panel');
+  }
+
+  // Draw detail panels if present
+  if (hasDetails) {
+    const detailMinY = Math.min(...pattern.detailPanels!.map(p => p.position.y));
+    svg += `  <text x="0.5" y="${(detailMinY - 0.2).toFixed(4)}" class="section-title">Detail &amp; Trim Pieces (glue onto structural panels)</text>\n`;
+    svg += renderPanels(pattern.detailPanels!, 'detail-panel');
   }
 
   // Add legend

@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { useBuildingStore, type BuildingSurface, type LibraryTexture } from '@/stores/buildingStore';
-import { MODEL_SCALES, RoofStyle, ROOF_STYLE_INFO, MaterialType, MATERIAL_PROPERTIES, DEFAULT_MATERIAL } from '@/types/building';
+import { MODEL_SCALES, RoofStyle, ROOF_STYLE_INFO, MaterialType, MATERIAL_PROPERTIES, DEFAULT_MATERIAL, TrimStyle, TRIM_PROFILES, WallDetails, RoofTrim } from '@/types/building';
 import { TexturePicker } from './TexturePicker';
 
 export function ControlPanel() {
@@ -27,6 +27,9 @@ export function ControlPanel() {
     setMaterialThickness,
     setJointMethod,
     setGenerateFacades,
+    setTrimStyle,
+    setWallDetails,
+    setRoofTrim,
     toggleWireframe,
     toggleDimensions,
     resetToDefaults,
@@ -250,6 +253,18 @@ export function ControlPanel() {
         onGenerateFacadesChange={setGenerateFacades}
       />
 
+      {/* Architectural Details Section */}
+      <DetailsSection
+        trimStyle={params.trimStyle || 'none'}
+        wallDetails={params.wallDetails}
+        roofTrim={params.roofTrim}
+        roofStyle={params.roof.style}
+        hasOpenings={params.openings.length > 0}
+        onTrimStyleChange={setTrimStyle}
+        onWallDetailsChange={setWallDetails}
+        onRoofTrimChange={setRoofTrim}
+      />
+
       {/* Textures Section */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Textures</h3>
@@ -455,6 +470,150 @@ function MaterialSection({
       <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
         {props.description}
       </p>
+    </div>
+  );
+}
+
+// =============================================================================
+// Architectural Details Section
+// =============================================================================
+
+const trimStyles: TrimStyle[] = ['none', 'simple', 'colonial', 'craftsman', 'victorian'];
+
+interface DetailsSectionProps {
+  trimStyle: TrimStyle;
+  wallDetails?: WallDetails;
+  roofTrim?: RoofTrim;
+  roofStyle: RoofStyle;
+  hasOpenings: boolean;
+  onTrimStyleChange: (style: TrimStyle) => void;
+  onWallDetailsChange: (details: Partial<WallDetails>) => void;
+  onRoofTrimChange: (trim: Partial<RoofTrim>) => void;
+}
+
+function DetailsSection({
+  trimStyle,
+  wallDetails,
+  roofTrim,
+  roofStyle,
+  hasOpenings,
+  onTrimStyleChange,
+  onWallDetailsChange,
+  onRoofTrimChange,
+}: DetailsSectionProps) {
+  const isGable = roofStyle === 'gable' || roofStyle === 'saltbox' || roofStyle === 'gambrel';
+
+  return (
+    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Architectural Details</h3>
+
+      {/* Trim Style */}
+      {hasOpenings && (
+        <div className="mb-3">
+          <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5 block">
+            Window/Door Trim
+          </label>
+          <div className="grid grid-cols-3 gap-1">
+            {trimStyles.map((style) => {
+              const profile = TRIM_PROFILES[style];
+              return (
+                <button
+                  key={style}
+                  onClick={() => onTrimStyleChange(style)}
+                  className={`px-2 py-1.5 text-xs rounded border transition-colors ${
+                    trimStyle === style
+                      ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-600 dark:text-blue-300'
+                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-400'
+                  }`}
+                >
+                  {profile ? profile.label : 'None'}
+                </button>
+              );
+            })}
+          </div>
+          {trimStyle !== 'none' && TRIM_PROFILES[trimStyle] && (
+            <p className="text-xs text-gray-500 mt-1">{TRIM_PROFILES[trimStyle]!.description}</p>
+          )}
+        </div>
+      )}
+
+      {/* Wall Details */}
+      <div className="mb-3">
+        <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5 block">
+          Wall Details
+        </label>
+        <div className="space-y-1">
+          {([
+            ['cornerBoards', 'Corner boards'],
+            ['baseboard', 'Baseboard'],
+            ['beltCourse', 'Belt course'],
+            ['wainscoting', 'Wainscoting'],
+            ['quoins', 'Quoins'],
+          ] as const).map(([key, label]) => (
+            <label key={key} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={wallDetails?.[key] || false}
+                onChange={(e) => onWallDetailsChange({ [key]: e.target.checked })}
+                className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600"
+              />
+              <span className="text-xs text-gray-700 dark:text-gray-300">{label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Roof Trim */}
+      <div>
+        <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5 block">
+          Roof Trim
+        </label>
+        <div className="space-y-1">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={roofTrim?.fascia || false}
+              onChange={(e) => onRoofTrimChange({ fascia: e.target.checked })}
+              className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600"
+            />
+            <span className="text-xs text-gray-700 dark:text-gray-300">Fascia boards</span>
+          </label>
+          {isGable && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={roofTrim?.bargeboard || false}
+                onChange={(e) => onRoofTrimChange({ bargeboard: e.target.checked })}
+                className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600"
+              />
+              <span className="text-xs text-gray-700 dark:text-gray-300">Bargeboard</span>
+            </label>
+          )}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={roofTrim?.ridgeCap || false}
+              onChange={(e) => onRoofTrimChange({ ridgeCap: e.target.checked })}
+              className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600"
+            />
+            <span className="text-xs text-gray-700 dark:text-gray-300">Ridge cap</span>
+          </label>
+          {isGable && roofTrim?.bargeboard && (
+            <div className="ml-5 mt-1">
+              <label className="text-xs text-gray-500 mb-1 block">Style</label>
+              <select
+                value={roofTrim?.bargeboardStyle || 'plain'}
+                onChange={(e) => onRoofTrimChange({ bargeboardStyle: e.target.value as 'plain' | 'scalloped' | 'gingerbread' })}
+                className="w-full text-xs py-1 px-2 border rounded bg-white dark:bg-gray-800 dark:border-gray-600"
+              >
+                <option value="plain">Plain</option>
+                <option value="scalloped">Scalloped</option>
+                <option value="gingerbread">Gingerbread</option>
+              </select>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

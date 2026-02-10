@@ -36,21 +36,22 @@ const CONTROL_PANEL_WIDTH = 320;
 const PANEL_GAP = 8;
 
 export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps) {
-  const { params } = useBuildingStore();
+  const { params, accessories } = useBuildingStore();
 
   const [exportFormat, setExportFormat] = useState<ExportFormat>('svg');
   const [paperSize, setPaperSize] = useState<PaperSize>('letter');
   const [margins, setMargins] = useState(0.5); // inches
   const [includeInstructions, setIncludeInstructions] = useState(true);
   const [includeGrid, setIncludeGrid] = useState(false);
+  const [includeAccessories, setIncludeAccessories] = useState(true);
   const [tiledExport, setTiledExport] = useState(false);
   const [dpi, setDpi] = useState(300);
   const [isExporting, setIsExporting] = useState(false);
 
-  // Generate pattern
+  // Generate pattern (including accessory panels)
   const pattern = useMemo(() => {
-    return unfoldBuilding(params, buildingName);
-  }, [params, buildingName]);
+    return unfoldBuilding(params, buildingName, accessories);
+  }, [params, buildingName, accessories]);
 
   // Calculate if tiling is needed
   const paper = PAPER_SIZES[paperSize];
@@ -298,6 +299,19 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">Include alignment grid</span>
             </label>
+            {pattern.accessoryPanels && pattern.accessoryPanels.length > 0 && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeAccessories}
+                  onChange={(e) => setIncludeAccessories(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  Include accessory patterns ({pattern.accessoryPanels.length} pieces)
+                </span>
+              </label>
+            )}
           </div>
         </div>
 
