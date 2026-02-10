@@ -12,7 +12,7 @@ import { Edges } from '@react-three/drei';
 import * as THREE from 'three';
 import { useBuildingStore } from '@/stores/buildingStore';
 import { DEFAULT_MATERIAL, ACCESSORY_PRESETS, type MaterialType, type Opening, type FloorConfig, type Accessory } from '@/types/building';
-import { getWallProfile, getProfileMaxHeight, type WallProfile } from '@/lib/wall-profiles';
+import { getWallProfile } from '@/lib/wall-profiles';
 
 // Material colors for 3D preview
 const MATERIAL_COLORS: Record<MaterialType, { wall: string; edge: string }> = {
@@ -43,6 +43,8 @@ export function BuildingMesh() {
   const roofHeight = useMemo(() => {
     if (roofStyle === 'flat') return 0;
     const pitchRad = (pitch * Math.PI) / 180;
+    // Shed slope spans full depth; all others span half
+    if (roofStyle === 'shed') return depth * Math.tan(pitchRad);
     return (depth / 2) * Math.tan(pitchRad);
   }, [roofStyle, pitch, depth]);
 
@@ -985,8 +987,8 @@ function WallFill({
   thickness: number;
 }) {
   const fills = useMemo(() => {
-    const result: { vertices: Float32Array; indices: Uint16Array; color: string }[] = [];
-    const y0 = height / 2; // Wall top within group
+    const result: { geometry: THREE.BufferGeometry; color: string }[] = [];
+    const y0 = height / 2;
     const halfW = width / 2;
     const halfD = depth / 2;
 
@@ -1004,55 +1006,43 @@ function WallFill({
         buildingDepth: depth,
       });
 
-      // Extract vertices above the base wall height
-      const maxH = getProfileMaxHeight(profile);
-      if (maxH <= height + 0.001) continue;
+      // Clip profile polygon to region above wall height
+      const fillPoly = clipProfileAbove(profile.vertices, height);
+      if (fillPoly.length < 3) continue;
 
-      // Build polygon of the area above wall-top
-      // Collect vertices at or above wall height, plus the two wall-top corners
-      const aboveVerts: { x: number; y: number }[] = [];
-      for (const v of profile.vertices) {
-        if (v.y >= height - 0.001) {
-          aboveVerts.push(v);
-        }
-      }
-      if (aboveVerts.length < 3) continue;
-
-      // Triangulate the fill polygon
-      const tris = triangulateConvex(aboveVerts);
+      // Triangulate the clipped polygon (fan from first vertex)
+      const tris = triangulateConvex(fillPoly);
       if (tris.length < 3) continue;
 
       const col = isLR ? edgeColor : wallColor;
 
+      // Map 2D profile coordinates to 3D world positions
+      const verts = new Float32Array(tris.length * 3);
+
       if (isLR) {
-        // Left wall at x = -halfW, Right wall at x = +halfW
-        for (const sign of [-1, 1]) {
-          const x = sign * halfW;
-          const verts = new Float32Array(tris.length * 3);
-          for (let i = 0; i < tris.length; i++) {
-            const v = tris[i];
-            // Profile x=0 → z=+halfD (front), x=wallWidth → z=-halfD (back)
-            verts[i * 3] = x;
-            verts[i * 3 + 1] = v.y - height + y0;
-            verts[i * 3 + 2] = halfD - v.x;
-          }
-          const inds = new Uint16Array(Array.from({ length: tris.length }, (_, i) => i));
-          result.push({ vertices: verts, indices: inds, color: col });
-        }
-      } else {
-        // Front wall at z = +halfD, Back wall at z = -halfD
-        const z = side === 'front' ? halfD : -halfD;
-        const verts = new Float32Array(tris.length * 3);
+        const x = side === 'left' ? -halfW : halfW;
         for (let i = 0; i < tris.length; i++) {
           const v = tris[i];
-          // Profile x=0 → x=-halfW, x=wallWidth → x=+halfW
+          verts[i * 3] = x;
+          verts[i * 3 + 1] = v.y - height + y0;
+          verts[i * 3 + 2] = halfD - v.x;
+        }
+      } else {
+        const z = side === 'front' ? halfD : -halfD;
+        for (let i = 0; i < tris.length; i++) {
+          const v = tris[i];
           verts[i * 3] = -halfW + v.x;
           verts[i * 3 + 1] = v.y - height + y0;
           verts[i * 3 + 2] = z;
         }
-        const inds = new Uint16Array(Array.from({ length: tris.length }, (_, i) => i));
-        result.push({ vertices: verts, indices: inds, color: col });
       }
+
+      const inds = new Uint16Array(Array.from({ length: tris.length }, (_, idx) => idx));
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+      geo.setIndex(new THREE.BufferAttribute(inds, 1));
+      geo.computeVertexNormals();
+      result.push({ geometry: geo, color: col });
     }
 
     return result;
@@ -1060,20 +1050,55 @@ function WallFill({
 
   return (
     <group>
-      {fills.map((fill, i) => {
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(fill.vertices, 3));
-        geo.setIndex(new THREE.BufferAttribute(fill.indices, 1));
-        geo.computeVertexNormals();
-        return (
-          <mesh key={i} geometry={geo}>
-            <meshStandardMaterial color={fill.color} side={THREE.DoubleSide} />
-            {showWireframe && <Edges color="black" />}
-          </mesh>
-        );
-      })}
+      {fills.map((fill, i) => (
+        <mesh key={i} geometry={fill.geometry}>
+          <meshStandardMaterial color={fill.color} side={THREE.DoubleSide} />
+          {showWireframe && <Edges color="black" />}
+        </mesh>
+      ))}
     </group>
   );
+}
+
+/**
+ * Clip a polygon to the half-plane y >= clipY.
+ * Uses Sutherland–Hodgman for a single horizontal clip line.
+ * Handles edges that cross the clip line by inserting intersection vertices.
+ */
+function clipProfileAbove(
+  vertices: { x: number; y: number }[],
+  clipY: number,
+): { x: number; y: number }[] {
+  const result: { x: number; y: number }[] = [];
+  const n = vertices.length;
+  const eps = 0.001;
+
+  for (let i = 0; i < n; i++) {
+    const curr = vertices[i];
+    const next = vertices[(i + 1) % n];
+    const currAbove = curr.y >= clipY - eps;
+    const nextAbove = next.y >= clipY - eps;
+
+    if (currAbove) {
+      result.push({ x: curr.x, y: Math.max(curr.y, clipY) });
+    }
+
+    // Insert intersection when edge crosses the clip line
+    if (currAbove !== nextAbove) {
+      const dy = next.y - curr.y;
+      if (Math.abs(dy) > eps) {
+        const t = (clipY - curr.y) / dy;
+        if (t > eps && t < 1 - eps) {
+          result.push({
+            x: curr.x + t * (next.x - curr.x),
+            y: clipY,
+          });
+        }
+      }
+    }
+  }
+
+  return result;
 }
 
 /** Simple fan triangulation for convex polygons */
