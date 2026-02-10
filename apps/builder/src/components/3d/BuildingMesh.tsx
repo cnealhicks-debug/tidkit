@@ -12,6 +12,7 @@ import { Edges } from '@react-three/drei';
 import * as THREE from 'three';
 import { useBuildingStore } from '@/stores/buildingStore';
 import { DEFAULT_MATERIAL, ACCESSORY_PRESETS, type MaterialType, type Opening, type FloorConfig, type Accessory } from '@/types/building';
+import { getWallProfile, getProfileMaxHeight, type WallProfile } from '@/lib/wall-profiles';
 
 // Material colors for 3D preview
 const MATERIAL_COLORS: Record<MaterialType, { wall: string; edge: string }> = {
@@ -122,6 +123,57 @@ export function BuildingMesh() {
           baseHeight={height}
           color={roofColor}
           showWireframe={showWireframe}
+        />
+      )}
+
+      {roofStyle === 'gambrel' && (
+        <GambrelRoof
+          width={width}
+          depth={depth}
+          roofHeight={roofHeight}
+          overhang={overhang}
+          baseHeight={height}
+          color={roofColor}
+          showWireframe={showWireframe}
+        />
+      )}
+
+      {roofStyle === 'mansard' && (
+        <MansardRoof
+          width={width}
+          depth={depth}
+          roofHeight={roofHeight}
+          overhang={overhang}
+          baseHeight={height}
+          color={roofColor}
+          showWireframe={showWireframe}
+        />
+      )}
+
+      {roofStyle === 'saltbox' && (
+        <SaltboxRoof
+          width={width}
+          depth={depth}
+          roofHeight={roofHeight}
+          overhang={overhang}
+          baseHeight={height}
+          color={roofColor}
+          showWireframe={showWireframe}
+        />
+      )}
+
+      {/* Wall fills — triangles/trapezoids closing gaps between walls and roof */}
+      {roofStyle !== 'flat' && roofStyle !== 'hip' && (
+        <WallFill
+          roofStyle={roofStyle}
+          width={width}
+          depth={depth}
+          height={height}
+          roofPitch={pitch}
+          wallColor={colors.wall}
+          edgeColor={colors.edge}
+          showWireframe={showWireframe}
+          thickness={showThickness ? wallThicknessFeet : 0}
         />
       )}
 
@@ -594,23 +646,28 @@ function GableRoof({
     const d = depth / 2 + overhang;
     const h = roofHeight;
 
+    // Ridge runs along x (width), slope spans z (depth)
+    // Back slope: eave at z=-d up to ridge at z=0
+    // Front slope: eave at z=+d up to ridge at z=0
     const vertices = new Float32Array([
-      -w, baseHeight / 2, -d,
-      -w, baseHeight / 2, d,
-      0, baseHeight / 2 + h, d,
-      0, baseHeight / 2 + h, -d,
+      // Back slope
+      -w, baseHeight / 2, -d,       // 0: left-back eave
+       w, baseHeight / 2, -d,       // 1: right-back eave
+       w, baseHeight / 2 + h, 0,    // 2: right-ridge
+      -w, baseHeight / 2 + h, 0,    // 3: left-ridge
 
-      w, baseHeight / 2, -d,
-      w, baseHeight / 2, d,
-      0, baseHeight / 2 + h, d,
-      0, baseHeight / 2 + h, -d,
+      // Front slope
+      -w, baseHeight / 2, d,        // 4: left-front eave
+       w, baseHeight / 2, d,        // 5: right-front eave
+       w, baseHeight / 2 + h, 0,    // 6: right-ridge
+      -w, baseHeight / 2 + h, 0,    // 7: left-ridge
     ]);
 
     const indices = new Uint16Array([
       0, 1, 2,
       0, 2, 3,
-      5, 4, 7,
-      5, 7, 6,
+      4, 5, 6,
+      4, 6, 7,
     ]);
 
     geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
@@ -732,4 +789,298 @@ function ShedRoof({
       {showWireframe && <Edges color="black" />}
     </mesh>
   );
+}
+
+// =============================================================================
+// Additional Roof Components — Gambrel, Mansard, Saltbox
+// =============================================================================
+
+interface RoofProps {
+  width: number;
+  depth: number;
+  roofHeight: number;
+  overhang: number;
+  baseHeight: number;
+  color: string;
+  showWireframe: boolean;
+}
+
+function GambrelRoof({ width, depth, roofHeight, overhang, baseHeight, color, showWireframe }: RoofProps) {
+  const geometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    const w = width / 2 + overhang;
+    const d = depth / 2 + overhang;
+    const halfD = depth / 2;
+
+    // Lower slope is steep (60°), upper uses actual pitch
+    const lowerSpan = halfD * 0.35;
+    const lowerAngle = Math.PI / 3;
+    const lowerH = lowerSpan * Math.tan(lowerAngle);
+    const pitchRad = halfD > 0 ? Math.atan(roofHeight / halfD) : Math.PI / 6;
+    const upperSpan = halfD - lowerSpan;
+    const upperH = upperSpan * Math.tan(pitchRad);
+    const totalH = lowerH + upperH;
+    const y0 = baseHeight / 2;
+
+    // Scale overhang positions proportionally
+    const breakZ = d - lowerSpan * (d / halfD);
+
+    const vertices = new Float32Array([
+      // Back lower slope
+      -w, y0, -d,                   // 0
+       w, y0, -d,                   // 1
+       w, y0 + lowerH, -breakZ,     // 2
+      -w, y0 + lowerH, -breakZ,     // 3
+      // Back upper slope → ridge
+       w, y0 + totalH, 0,           // 4
+      -w, y0 + totalH, 0,           // 5
+      // Front lower slope
+      -w, y0, d,                    // 6
+       w, y0, d,                    // 7
+       w, y0 + lowerH, breakZ,      // 8
+      -w, y0 + lowerH, breakZ,      // 9
+      // Front upper slope → ridge
+       w, y0 + totalH, 0,           // 10
+      -w, y0 + totalH, 0,           // 11
+    ]);
+
+    const indices = new Uint16Array([
+      0, 1, 2, 0, 2, 3,     // back lower
+      3, 2, 4, 3, 4, 5,     // back upper
+      6, 7, 8, 6, 8, 9,     // front lower
+      9, 8, 10, 9, 10, 11,  // front upper
+    ]);
+
+    geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geo.setIndex(new THREE.BufferAttribute(indices, 1));
+    geo.computeVertexNormals();
+    return geo;
+  }, [width, depth, roofHeight, overhang, baseHeight]);
+
+  return (
+    <mesh geometry={geometry}>
+      <meshStandardMaterial color={color} side={THREE.DoubleSide} />
+      {showWireframe && <Edges color="black" />}
+    </mesh>
+  );
+}
+
+function MansardRoof({ width, depth, roofHeight, overhang, baseHeight, color, showWireframe }: RoofProps) {
+  const geometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    const w = width / 2 + overhang;
+    const d = depth / 2 + overhang;
+
+    const mansardAngle = (70 * Math.PI) / 180;
+    const inset = depth * 0.15;
+    const insetX = width * 0.15;
+    const mansardH = inset * Math.tan(mansardAngle);
+    const y0 = baseHeight / 2;
+
+    const vertices = new Float32Array([
+      // Base corners (eave level)
+      -w, y0, -d,                                   // 0
+       w, y0, -d,                                   // 1
+       w, y0, d,                                    // 2
+      -w, y0, d,                                    // 3
+      // Top corners (inset)
+      -(w - insetX), y0 + mansardH, -(d - inset),   // 4
+       (w - insetX), y0 + mansardH, -(d - inset),   // 5
+       (w - insetX), y0 + mansardH,  (d - inset),   // 6
+      -(w - insetX), y0 + mansardH,  (d - inset),   // 7
+    ]);
+
+    const indices = new Uint16Array([
+      0, 1, 5, 0, 5, 4,   // back
+      1, 2, 6, 1, 6, 5,   // right
+      2, 3, 7, 2, 7, 6,   // front
+      3, 0, 4, 3, 4, 7,   // left
+      4, 5, 6, 4, 6, 7,   // top
+    ]);
+
+    geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geo.setIndex(new THREE.BufferAttribute(indices, 1));
+    geo.computeVertexNormals();
+    return geo;
+  }, [width, depth, roofHeight, overhang, baseHeight]);
+
+  return (
+    <mesh geometry={geometry}>
+      <meshStandardMaterial color={color} side={THREE.DoubleSide} />
+      {showWireframe && <Edges color="black" />}
+    </mesh>
+  );
+}
+
+function SaltboxRoof({ width, depth, roofHeight, overhang, baseHeight, color, showWireframe }: RoofProps) {
+  const geometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    const w = width / 2 + overhang;
+    const d = depth / 2 + overhang;
+    const halfD = depth / 2;
+
+    // Ridge offset toward front (~35% from front)
+    const ridgePos = halfD * 0.35;
+    const pitchRad = halfD > 0 ? Math.atan(roofHeight / halfD) : Math.PI / 6;
+    const peakH = ridgePos * Math.tan(pitchRad);
+    const y0 = baseHeight / 2;
+
+    // Ridge z position: front is +z, so ridge is at z = d - ridgePos*(d/halfD)
+    const ridgeZ = d - ridgePos * (d / halfD);
+
+    const vertices = new Float32Array([
+      // Front slope (short, steep)
+      -w, y0, d,                  // 0
+       w, y0, d,                  // 1
+       w, y0 + peakH, ridgeZ,     // 2
+      -w, y0 + peakH, ridgeZ,     // 3
+      // Back slope (long, gentle)
+      -w, y0, -d,                 // 4
+       w, y0, -d,                 // 5
+       w, y0 + peakH, ridgeZ,     // 6
+      -w, y0 + peakH, ridgeZ,     // 7
+    ]);
+
+    const indices = new Uint16Array([
+      0, 1, 2, 0, 2, 3,   // front slope
+      5, 4, 7, 5, 7, 6,   // back slope
+    ]);
+
+    geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geo.setIndex(new THREE.BufferAttribute(indices, 1));
+    geo.computeVertexNormals();
+    return geo;
+  }, [width, depth, roofHeight, overhang, baseHeight]);
+
+  return (
+    <mesh geometry={geometry}>
+      <meshStandardMaterial color={color} side={THREE.DoubleSide} />
+      {showWireframe && <Edges color="black" />}
+    </mesh>
+  );
+}
+
+// =============================================================================
+// WallFill — fills gaps between flat-topped walls and sloped rooflines
+// =============================================================================
+
+function WallFill({
+  roofStyle,
+  width,
+  depth,
+  height,
+  roofPitch,
+  wallColor,
+  edgeColor,
+  showWireframe,
+}: {
+  roofStyle: string;
+  width: number;
+  depth: number;
+  height: number;
+  roofPitch: number;
+  wallColor: string;
+  edgeColor: string;
+  showWireframe: boolean;
+  thickness: number;
+}) {
+  const fills = useMemo(() => {
+    const result: { vertices: Float32Array; indices: Uint16Array; color: string }[] = [];
+    const y0 = height / 2; // Wall top within group
+    const halfW = width / 2;
+    const halfD = depth / 2;
+
+    const sides: Array<'left' | 'right' | 'front' | 'back'> = ['left', 'right', 'front', 'back'];
+
+    for (const side of sides) {
+      const isLR = side === 'left' || side === 'right';
+      const wallWidth = isLR ? depth : width;
+      const profile = getWallProfile({
+        roofStyle: roofStyle as any,
+        wallSide: side,
+        wallWidth,
+        wallHeight: height,
+        roofPitch,
+        buildingDepth: depth,
+      });
+
+      // Extract vertices above the base wall height
+      const maxH = getProfileMaxHeight(profile);
+      if (maxH <= height + 0.001) continue;
+
+      // Build polygon of the area above wall-top
+      // Collect vertices at or above wall height, plus the two wall-top corners
+      const aboveVerts: { x: number; y: number }[] = [];
+      for (const v of profile.vertices) {
+        if (v.y >= height - 0.001) {
+          aboveVerts.push(v);
+        }
+      }
+      if (aboveVerts.length < 3) continue;
+
+      // Triangulate the fill polygon
+      const tris = triangulateConvex(aboveVerts);
+      if (tris.length < 3) continue;
+
+      const col = isLR ? edgeColor : wallColor;
+
+      if (isLR) {
+        // Left wall at x = -halfW, Right wall at x = +halfW
+        for (const sign of [-1, 1]) {
+          const x = sign * halfW;
+          const verts = new Float32Array(tris.length * 3);
+          for (let i = 0; i < tris.length; i++) {
+            const v = tris[i];
+            // Profile x=0 → z=+halfD (front), x=wallWidth → z=-halfD (back)
+            verts[i * 3] = x;
+            verts[i * 3 + 1] = v.y - height + y0;
+            verts[i * 3 + 2] = halfD - v.x;
+          }
+          const inds = new Uint16Array(Array.from({ length: tris.length }, (_, i) => i));
+          result.push({ vertices: verts, indices: inds, color: col });
+        }
+      } else {
+        // Front wall at z = +halfD, Back wall at z = -halfD
+        const z = side === 'front' ? halfD : -halfD;
+        const verts = new Float32Array(tris.length * 3);
+        for (let i = 0; i < tris.length; i++) {
+          const v = tris[i];
+          // Profile x=0 → x=-halfW, x=wallWidth → x=+halfW
+          verts[i * 3] = -halfW + v.x;
+          verts[i * 3 + 1] = v.y - height + y0;
+          verts[i * 3 + 2] = z;
+        }
+        const inds = new Uint16Array(Array.from({ length: tris.length }, (_, i) => i));
+        result.push({ vertices: verts, indices: inds, color: col });
+      }
+    }
+
+    return result;
+  }, [roofStyle, width, depth, height, roofPitch, wallColor, edgeColor]);
+
+  return (
+    <group>
+      {fills.map((fill, i) => {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(fill.vertices, 3));
+        geo.setIndex(new THREE.BufferAttribute(fill.indices, 1));
+        geo.computeVertexNormals();
+        return (
+          <mesh key={i} geometry={geo}>
+            <meshStandardMaterial color={fill.color} side={THREE.DoubleSide} />
+            {showWireframe && <Edges color="black" />}
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+/** Simple fan triangulation for convex polygons */
+function triangulateConvex(verts: { x: number; y: number }[]): { x: number; y: number }[] {
+  const result: { x: number; y: number }[] = [];
+  for (let i = 1; i < verts.length - 1; i++) {
+    result.push(verts[0], verts[i], verts[i + 1]);
+  }
+  return result;
 }

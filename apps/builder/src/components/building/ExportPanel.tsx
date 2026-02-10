@@ -48,10 +48,20 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
   const [dpi, setDpi] = useState(300);
   const [isExporting, setIsExporting] = useState(false);
 
-  // Generate pattern (including accessory panels)
-  const pattern = useMemo(() => {
+  // Generate full pattern (including accessory panels)
+  const fullPattern = useMemo(() => {
     return unfoldBuilding(params, buildingName, accessories);
   }, [params, buildingName, accessories]);
+
+  // Filter pattern for export based on include options
+  const pattern = useMemo(() => {
+    if (includeAccessories) return fullPattern;
+    return {
+      ...fullPattern,
+      accessoryPanels: undefined,
+      detailPanels: undefined,
+    };
+  }, [fullPattern, includeAccessories]);
 
   // Calculate if tiling is needed
   const paper = PAPER_SIZES[paperSize];
@@ -299,7 +309,7 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">Include alignment grid</span>
             </label>
-            {pattern.accessoryPanels && pattern.accessoryPanels.length > 0 && (
+            {fullPattern.accessoryPanels && fullPattern.accessoryPanels.length > 0 && (
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -308,7 +318,7 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
                   className="w-4 h-4 rounded border-gray-300 text-blue-600"
                 />
                 <span className="text-sm text-gray-700 dark:text-gray-300">
-                  Include accessory patterns ({pattern.accessoryPanels.length} pieces)
+                  Include accessory &amp; detail patterns ({(fullPattern.accessoryPanels?.length || 0) + (fullPattern.detailPanels?.length || 0)} pieces)
                 </span>
               </label>
             )}

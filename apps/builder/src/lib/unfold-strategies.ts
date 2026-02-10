@@ -16,6 +16,7 @@ import { generateAccessoryPanels } from './accessory-patterns';
 import { generateOpeningTrim } from './opening-trim';
 import { generateWallDetails } from './wall-details';
 import { generateRoofTrimPanels } from './roof-trim';
+import { getWallProfile, getProfileMaxHeight } from './wall-profiles';
 
 // =============================================================================
 // Strategy Interface
@@ -128,6 +129,62 @@ function buildPatternResult(
   };
 }
 
+/**
+ * Generate edges for a wall profile panel in the paper strip.
+ * Bottom = glue-tab, left/right vertical edges = fold or cut,
+ * any edges above foldLineY get fold lines at the transition.
+ */
+function generateWallEdges(
+  profile: import('./wall-profiles').WallProfile,
+  position: 'first' | 'middle' | 'last',
+): Panel['edges'] {
+  const verts = profile.vertices;
+  const n = verts.length;
+  const edges: Panel['edges'] = [];
+
+  for (let i = 0; i < n; i++) {
+    const next = (i + 1) % n;
+    const v1 = verts[i];
+    const v2 = verts[next];
+
+    // Bottom edge (both y near 0)
+    if (v1.y < 0.001 && v2.y < 0.001) {
+      edges.push({ type: 'glue-tab', from: i, to: next });
+      continue;
+    }
+
+    // Left vertical edge (x near 0)
+    if (v1.x < 0.001 && v2.x < 0.001) {
+      edges.push({ type: position === 'first' ? 'cut' : 'valley', from: i, to: next });
+      continue;
+    }
+
+    // Right vertical edge (x near max)
+    const maxX = Math.max(...verts.map(v => v.x));
+    if (Math.abs(v1.x - maxX) < 0.001 && Math.abs(v2.x - maxX) < 0.001) {
+      edges.push({ type: position === 'last' ? 'cut' : 'valley', from: i, to: next });
+      continue;
+    }
+
+    // Top horizontal edge at wall height (fold line where base meets gable)
+    if (profile.foldLineY && Math.abs(v1.y - profile.foldLineY) < 0.001 && Math.abs(v2.y - profile.foldLineY) < 0.001) {
+      edges.push({ type: 'mountain', from: i, to: next });
+      continue;
+    }
+
+    // Diagonal/sloped edges above wall height (gable slopes, gambrel, etc.)
+    if (v1.y > (profile.foldLineY || 0) - 0.001 || v2.y > (profile.foldLineY || 0) - 0.001) {
+      edges.push({ type: 'cut', from: i, to: next });
+      continue;
+    }
+
+    // Default: mountain fold (top edge of rectangular portion)
+    edges.push({ type: 'mountain', from: i, to: next });
+  }
+
+  return edges;
+}
+
 // =============================================================================
 // Paper Unfold Strategy (original logic, extracted verbatim)
 // =============================================================================
@@ -158,101 +215,71 @@ export class PaperUnfoldStrategy implements UnfoldStrategy {
     let maxHeight = 0;
 
     // === WALLS (connected strip: Front -> Right -> Back -> Left) ===
+    // Use wall profiles that integrate gable/shed/gambrel extensions into the wall shape
 
-    const frontWall: Panel = {
-      id: 'front-wall',
-      name: 'Front Wall',
-      vertices: [
-        { x: 0, y: 0 },
-        { x: width, y: 0 },
-        { x: width, y: height },
-        { x: 0, y: height },
-      ],
-      edges: [
-        { type: 'glue-tab', from: 0, to: 1 },
-        { type: 'valley', from: 1, to: 2 },
-        { type: 'mountain', from: 2, to: 3 },
-        { type: 'cut', from: 3, to: 0 },
-      ],
-      position: { x: currentX, y: currentY },
-      rotation: 0,
-      openings: processOpenings(openings, feetToModelInches, frontOpenings),
-    };
-    panels.push(frontWall);
-    glueTabs.push(createGlueTab('front-left-tab', 'front-wall', 3, frontWall, GLUE_TAB_WIDTH));
-    currentX += width;
+    const wallDefs: Array<{
+      id: string; name: string; side: 'front' | 'back' | 'left' | 'right';
+      wallWidth: number; openingsForWall: typeof frontOpenings;
+      position: 'first' | 'middle' | 'last'; connectsTo?: string;
+    }> = [
+      { id: 'front-wall', name: 'Front Wall', side: 'front', wallWidth: width, openingsForWall: frontOpenings, position: 'first' },
+      { id: 'right-wall', name: 'Right Wall', side: 'right', wallWidth: depth, openingsForWall: rightOpenings, position: 'middle', connectsTo: 'front-wall' },
+      { id: 'back-wall', name: 'Back Wall', side: 'back', wallWidth: width, openingsForWall: backOpenings, position: 'middle', connectsTo: 'right-wall' },
+      { id: 'left-wall', name: 'Left Wall', side: 'left', wallWidth: depth, openingsForWall: leftOpenings, position: 'last', connectsTo: 'back-wall' },
+    ];
 
-    const rightWall: Panel = {
-      id: 'right-wall',
-      name: 'Right Wall',
-      vertices: [
-        { x: 0, y: 0 },
-        { x: depth, y: 0 },
-        { x: depth, y: height },
-        { x: 0, y: height },
-      ],
-      edges: [
-        { type: 'glue-tab', from: 0, to: 1 },
-        { type: 'valley', from: 1, to: 2 },
-        { type: 'mountain', from: 2, to: 3 },
-        { type: 'valley', from: 3, to: 0 },
-      ],
-      position: { x: currentX, y: currentY },
-      rotation: 0,
-      connectsTo: 'front-wall',
-      openings: processOpenings(openings, feetToModelInches, rightOpenings),
-    };
-    panels.push(rightWall);
-    currentX += depth;
+    for (const wallDef of wallDefs) {
+      const profile = getWallProfile({
+        roofStyle: roof.style,
+        wallSide: wallDef.side,
+        wallWidth: wallDef.wallWidth,
+        wallHeight: height,
+        roofPitch: roof.pitch,
+        buildingDepth: depth,
+      });
 
-    const backWall: Panel = {
-      id: 'back-wall',
-      name: 'Back Wall',
-      vertices: [
-        { x: 0, y: 0 },
-        { x: width, y: 0 },
-        { x: width, y: height },
-        { x: 0, y: height },
-      ],
-      edges: [
-        { type: 'glue-tab', from: 0, to: 1 },
-        { type: 'valley', from: 1, to: 2 },
-        { type: 'mountain', from: 2, to: 3 },
-        { type: 'valley', from: 3, to: 0 },
-      ],
-      position: { x: currentX, y: currentY },
-      rotation: 0,
-      connectsTo: 'right-wall',
-      openings: processOpenings(openings, feetToModelInches, backOpenings),
-    };
-    panels.push(backWall);
-    currentX += width;
+      const wall: Panel = {
+        id: wallDef.id,
+        name: wallDef.name,
+        vertices: profile.vertices.map(v => ({ x: v.x, y: v.y })),
+        edges: generateWallEdges(profile, wallDef.position),
+        position: { x: currentX, y: currentY },
+        rotation: 0,
+        connectsTo: wallDef.connectsTo,
+        openings: processOpenings(openings, feetToModelInches, wallDef.openingsForWall),
+      };
+      panels.push(wall);
 
-    const leftWall: Panel = {
-      id: 'left-wall',
-      name: 'Left Wall',
-      vertices: [
-        { x: 0, y: 0 },
-        { x: depth, y: 0 },
-        { x: depth, y: height },
-        { x: 0, y: height },
-      ],
-      edges: [
-        { type: 'glue-tab', from: 0, to: 1 },
-        { type: 'cut', from: 1, to: 2 },
-        { type: 'mountain', from: 2, to: 3 },
-        { type: 'valley', from: 3, to: 0 },
-      ],
-      position: { x: currentX, y: currentY },
-      rotation: 0,
-      connectsTo: 'back-wall',
-      openings: processOpenings(openings, feetToModelInches, leftOpenings),
-    };
-    panels.push(leftWall);
-    glueTabs.push(createGlueTab('left-right-tab', 'left-wall', 1, leftWall, GLUE_TAB_WIDTH));
+      // Glue tabs: first wall gets left tab, last wall gets right tab
+      if (wallDef.position === 'first') {
+        // Left edge (last vertex index → vertex 0)
+        const leftEdgeIdx = profile.vertices.length - 1;
+        glueTabs.push(createGlueTab(`${wallDef.id}-left-tab`, wallDef.id, leftEdgeIdx, wall, GLUE_TAB_WIDTH));
+      }
+      if (wallDef.position === 'last') {
+        // Right edge (vertex at max-x going up)
+        // Find the edge going from bottom-right upward
+        const rightEdgeIdx = profile.vertices.findIndex((v, i) => {
+          const next = profile.vertices[(i + 1) % profile.vertices.length];
+          return Math.abs(v.x - wallDef.wallWidth) < 0.001 && v.y < next.y;
+        });
+        if (rightEdgeIdx >= 0) {
+          glueTabs.push(createGlueTab(`${wallDef.id}-right-tab`, wallDef.id, rightEdgeIdx, wall, GLUE_TAB_WIDTH));
+        }
+      }
 
-    currentX += depth + GLUE_TAB_WIDTH;
-    maxHeight = Math.max(maxHeight, height + GLUE_TAB_WIDTH * 2);
+      currentX += wallDef.wallWidth;
+    }
+
+    currentX += GLUE_TAB_WIDTH;
+    // Max height accounts for tallest wall profile (e.g. pentagon with gable)
+    const maxWallH = Math.max(
+      ...wallDefs.map(d => getProfileMaxHeight(getWallProfile({
+        roofStyle: roof.style, wallSide: d.side, wallWidth: d.wallWidth,
+        wallHeight: height, roofPitch: roof.pitch, buildingDepth: depth,
+      })))
+    );
+    maxHeight = Math.max(maxHeight, maxWallH + GLUE_TAB_WIDTH * 2);
 
     // === ROOF ===
     currentY = maxHeight + GLUE_TAB_WIDTH * 2;
@@ -336,54 +363,144 @@ export class PaperUnfoldStrategy implements UnfoldStrategy {
 
       maxHeight = currentY + roofPanelLength + GLUE_TAB_WIDTH;
 
-      // Gable ends
-      currentX = roofPanelWidth + GLUE_TAB_WIDTH * 3;
-      currentY = panels[0].position.y;
+      // Gable ends are now integrated into the left/right wall panels as pentagons
+    } else if (roof.style === 'saltbox') {
+      // Saltbox: asymmetric slopes — short front, long back
+      const halfD = depth / 2;
+      const ridgePos = halfD * 0.35;
+      const pitchRad2 = Math.atan(roofHeight / halfD);
+      const peakH = ridgePos * Math.tan(pitchRad2);
+      const frontSlopeLen = Math.sqrt(ridgePos * ridgePos + peakH * peakH) + overhang;
+      const backRun = halfD - ridgePos + halfD; // ridge to back eave
+      const backSlopeLen = Math.sqrt(backRun * backRun + peakH * peakH) + overhang;
+      const roofPanelWidth = width + overhang * 2;
 
-      const gableWidth = depth;
-      const gableFront: Panel = {
-        id: 'gable-front',
-        name: 'Gable (Front)',
+      // Front slope
+      panels.push({
+        id: 'roof-front', name: 'Roof (Front)',
         vertices: [
-          { x: 0, y: 0 },
-          { x: gableWidth, y: 0 },
-          { x: gableWidth / 2, y: roofHeight },
+          { x: 0, y: 0 }, { x: roofPanelWidth, y: 0 },
+          { x: roofPanelWidth, y: frontSlopeLen }, { x: 0, y: frontSlopeLen },
         ],
         edges: [
-          { type: 'glue-tab', from: 0, to: 1 },
-          { type: 'glue-tab', from: 1, to: 2 },
-          { type: 'glue-tab', from: 2, to: 0 },
+          { type: 'cut', from: 0, to: 1 }, { type: 'glue-tab', from: 1, to: 2 },
+          { type: 'valley', from: 2, to: 3 }, { type: 'glue-tab', from: 3, to: 0 },
         ],
-        position: { x: currentX, y: currentY },
-        rotation: 0,
-      };
-      panels.push(gableFront);
-      glueTabs.push(createGlueTab('gable-front-bottom', 'gable-front', 0, gableFront, GLUE_TAB_WIDTH));
-      glueTabs.push(createGlueTab('gable-front-right', 'gable-front', 1, gableFront, GLUE_TAB_WIDTH));
-      glueTabs.push(createGlueTab('gable-front-left', 'gable-front', 2, gableFront, GLUE_TAB_WIDTH));
+        position: { x: currentX, y: currentY }, rotation: 0,
+      });
+      currentY += frontSlopeLen;
 
-      currentY += roofHeight + GLUE_TAB_WIDTH * 2;
-
-      const gableBack: Panel = {
-        id: 'gable-back',
-        name: 'Gable (Back)',
+      // Back slope
+      panels.push({
+        id: 'roof-back', name: 'Roof (Back)',
         vertices: [
-          { x: 0, y: 0 },
-          { x: gableWidth, y: 0 },
-          { x: gableWidth / 2, y: roofHeight },
+          { x: 0, y: 0 }, { x: roofPanelWidth, y: 0 },
+          { x: roofPanelWidth, y: backSlopeLen }, { x: 0, y: backSlopeLen },
         ],
         edges: [
-          { type: 'glue-tab', from: 0, to: 1 },
-          { type: 'glue-tab', from: 1, to: 2 },
-          { type: 'glue-tab', from: 2, to: 0 },
+          { type: 'valley', from: 0, to: 1 }, { type: 'glue-tab', from: 1, to: 2 },
+          { type: 'cut', from: 2, to: 3 }, { type: 'glue-tab', from: 3, to: 0 },
         ],
-        position: { x: currentX, y: currentY },
-        rotation: 0,
-      };
-      panels.push(gableBack);
-      glueTabs.push(createGlueTab('gable-back-bottom', 'gable-back', 0, gableBack, GLUE_TAB_WIDTH));
-      glueTabs.push(createGlueTab('gable-back-right', 'gable-back', 1, gableBack, GLUE_TAB_WIDTH));
-      glueTabs.push(createGlueTab('gable-back-left', 'gable-back', 2, gableBack, GLUE_TAB_WIDTH));
+        position: { x: currentX, y: currentY }, rotation: 0, connectsTo: 'roof-front',
+      });
+      maxHeight = currentY + backSlopeLen + GLUE_TAB_WIDTH;
+    } else if (roof.style === 'gambrel') {
+      // Gambrel: 4 roof panels (steep lower + gentle upper, each side)
+      const halfD = depth / 2;
+      const lowerSpan = halfD * 0.35;
+      const lowerAngle = Math.PI / 3;
+      const lowerH = lowerSpan * Math.tan(lowerAngle);
+      const upperSpan = halfD - lowerSpan;
+      const upperH = upperSpan * Math.tan(pitchRad);
+      const lowerSlopeLen = Math.sqrt(lowerSpan * lowerSpan + lowerH * lowerH) + overhang * 0.5;
+      const upperSlopeLen = Math.sqrt(upperSpan * upperSpan + upperH * upperH) + overhang * 0.5;
+      const roofPanelWidth = width + overhang * 2;
+
+      // Back lower
+      panels.push({
+        id: 'roof-back-lower', name: 'Roof (Back Lower)',
+        vertices: [{ x: 0, y: 0 }, { x: roofPanelWidth, y: 0 }, { x: roofPanelWidth, y: lowerSlopeLen }, { x: 0, y: lowerSlopeLen }],
+        edges: [{ type: 'cut', from: 0, to: 1 }, { type: 'glue-tab', from: 1, to: 2 }, { type: 'valley', from: 2, to: 3 }, { type: 'glue-tab', from: 3, to: 0 }],
+        position: { x: currentX, y: currentY }, rotation: 0,
+      });
+      currentY += lowerSlopeLen;
+      // Back upper
+      panels.push({
+        id: 'roof-back-upper', name: 'Roof (Back Upper)',
+        vertices: [{ x: 0, y: 0 }, { x: roofPanelWidth, y: 0 }, { x: roofPanelWidth, y: upperSlopeLen }, { x: 0, y: upperSlopeLen }],
+        edges: [{ type: 'valley', from: 0, to: 1 }, { type: 'glue-tab', from: 1, to: 2 }, { type: 'valley', from: 2, to: 3 }, { type: 'glue-tab', from: 3, to: 0 }],
+        position: { x: currentX, y: currentY }, rotation: 0, connectsTo: 'roof-back-lower',
+      });
+      currentY += upperSlopeLen;
+      // Front upper
+      panels.push({
+        id: 'roof-front-upper', name: 'Roof (Front Upper)',
+        vertices: [{ x: 0, y: 0 }, { x: roofPanelWidth, y: 0 }, { x: roofPanelWidth, y: upperSlopeLen }, { x: 0, y: upperSlopeLen }],
+        edges: [{ type: 'valley', from: 0, to: 1 }, { type: 'glue-tab', from: 1, to: 2 }, { type: 'valley', from: 2, to: 3 }, { type: 'glue-tab', from: 3, to: 0 }],
+        position: { x: currentX, y: currentY }, rotation: 0, connectsTo: 'roof-back-upper',
+      });
+      currentY += upperSlopeLen;
+      // Front lower
+      panels.push({
+        id: 'roof-front-lower', name: 'Roof (Front Lower)',
+        vertices: [{ x: 0, y: 0 }, { x: roofPanelWidth, y: 0 }, { x: roofPanelWidth, y: lowerSlopeLen }, { x: 0, y: lowerSlopeLen }],
+        edges: [{ type: 'valley', from: 0, to: 1 }, { type: 'glue-tab', from: 1, to: 2 }, { type: 'cut', from: 2, to: 3 }, { type: 'glue-tab', from: 3, to: 0 }],
+        position: { x: currentX, y: currentY }, rotation: 0, connectsTo: 'roof-front-upper',
+      });
+      maxHeight = currentY + lowerSlopeLen + GLUE_TAB_WIDTH;
+    } else if (roof.style === 'mansard') {
+      // Mansard: 4 steep side panels + 1 flat top
+      const inset = depth * 0.15;
+      const insetX = width * 0.15;
+      const mansardAngle = (70 * Math.PI) / 180;
+      const mansardH = inset * Math.tan(mansardAngle);
+      const steepSlopeLen = Math.sqrt(inset * inset + mansardH * mansardH);
+      const roofPanelWidth = width + overhang * 2;
+
+      // Back steep
+      panels.push({
+        id: 'roof-back', name: 'Roof (Back Steep)',
+        vertices: [{ x: 0, y: 0 }, { x: roofPanelWidth, y: 0 }, { x: roofPanelWidth, y: steepSlopeLen }, { x: 0, y: steepSlopeLen }],
+        edges: [{ type: 'cut', from: 0, to: 1 }, { type: 'glue-tab', from: 1, to: 2 }, { type: 'cut', from: 2, to: 3 }, { type: 'glue-tab', from: 3, to: 0 }],
+        position: { x: currentX, y: currentY }, rotation: 0,
+      });
+      currentY += steepSlopeLen + PANEL_SPACING;
+      // Front steep
+      panels.push({
+        id: 'roof-front', name: 'Roof (Front Steep)',
+        vertices: [{ x: 0, y: 0 }, { x: roofPanelWidth, y: 0 }, { x: roofPanelWidth, y: steepSlopeLen }, { x: 0, y: steepSlopeLen }],
+        edges: [{ type: 'cut', from: 0, to: 1 }, { type: 'glue-tab', from: 1, to: 2 }, { type: 'cut', from: 2, to: 3 }, { type: 'glue-tab', from: 3, to: 0 }],
+        position: { x: currentX, y: currentY }, rotation: 0,
+      });
+      currentY += steepSlopeLen + PANEL_SPACING;
+      // Side steeps
+      const sideRoofW = depth + overhang * 2;
+      const sideSlopeLen = Math.sqrt(insetX * insetX + mansardH * mansardH);
+      panels.push({
+        id: 'roof-left', name: 'Roof (Left Steep)',
+        vertices: [{ x: 0, y: 0 }, { x: sideRoofW, y: 0 }, { x: sideRoofW, y: sideSlopeLen }, { x: 0, y: sideSlopeLen }],
+        edges: [{ type: 'cut', from: 0, to: 1 }, { type: 'glue-tab', from: 1, to: 2 }, { type: 'cut', from: 2, to: 3 }, { type: 'glue-tab', from: 3, to: 0 }],
+        position: { x: currentX, y: currentY }, rotation: 0,
+      });
+      currentX += sideRoofW + PANEL_SPACING;
+      panels.push({
+        id: 'roof-right', name: 'Roof (Right Steep)',
+        vertices: [{ x: 0, y: 0 }, { x: sideRoofW, y: 0 }, { x: sideRoofW, y: sideSlopeLen }, { x: 0, y: sideSlopeLen }],
+        edges: [{ type: 'cut', from: 0, to: 1 }, { type: 'glue-tab', from: 1, to: 2 }, { type: 'cut', from: 2, to: 3 }, { type: 'glue-tab', from: 3, to: 0 }],
+        position: { x: currentX, y: currentY }, rotation: 0,
+      });
+      currentY += sideSlopeLen + PANEL_SPACING;
+      // Flat top
+      currentX = GLUE_TAB_WIDTH;
+      const topW = width - 2 * insetX;
+      const topD = depth - 2 * inset;
+      panels.push({
+        id: 'roof-top', name: 'Roof (Top)',
+        vertices: [{ x: 0, y: 0 }, { x: topW, y: 0 }, { x: topW, y: topD }, { x: 0, y: topD }],
+        edges: [{ type: 'cut', from: 0, to: 1 }, { type: 'cut', from: 1, to: 2 }, { type: 'cut', from: 2, to: 3 }, { type: 'cut', from: 3, to: 0 }],
+        position: { x: currentX, y: currentY }, rotation: 0,
+      });
+      maxHeight = currentY + topD + GLUE_TAB_WIDTH;
     } else if (roof.style === 'hip') {
       const ridgeLength = Math.max(0, width - depth);
       const slopeLength = Math.sqrt(
@@ -592,116 +709,72 @@ export class SeparatePanelUnfoldStrategy implements UnfoldStrategy {
     // Joint compensation: miter keeps full dims, butt shortens side panels
     const isMiter = material.jointMethod === 'miter';
     const compensate = isMiter ? compensateMiterJoint : (w: number, h: number, side: 'front' | 'back' | 'left' | 'right') => compensateButtJoint(w, h, side, thickness);
-    const frontDims = compensate(width, height, 'front');
-    const backDims = compensate(width, height, 'back');
-    const leftDims = compensate(depth, height, 'left');
-    const rightDims = compensate(depth, height, 'right');
 
     let currentX = PANEL_SPACING;
     let currentY = PANEL_SPACING;
     let maxRowHeight = 0;
 
-    // === WALL PANELS (separate, all cut edges) ===
+    // === WALL PANELS (separate, all cut edges, with roof-compensated profiles) ===
 
-    // Front wall
-    const frontWall: Panel = {
-      id: 'front-wall',
-      name: `Front Wall (${frontDims.width.toFixed(2)}" × ${frontDims.height.toFixed(2)}")`,
-      vertices: [
-        { x: 0, y: 0 },
-        { x: frontDims.width, y: 0 },
-        { x: frontDims.width, y: frontDims.height },
-        { x: 0, y: frontDims.height },
-      ],
-      edges: [
-        { type: 'cut', from: 0, to: 1 },
-        { type: 'cut', from: 1, to: 2 },
-        { type: 'cut', from: 2, to: 3 },
-        { type: 'cut', from: 3, to: 0 },
-      ],
-      position: { x: currentX, y: currentY },
-      rotation: 0,
-      openings: processOpenings(openings, feetToModelInches, frontOpenings),
-    };
-    panels.push(frontWall);
-    currentX += frontDims.width + PANEL_SPACING;
-    maxRowHeight = Math.max(maxRowHeight, frontDims.height);
+    const sepWallDefs: Array<{
+      id: string; name: string; side: 'front' | 'back' | 'left' | 'right';
+      baseWidth: number; openingsForWall: typeof frontOpenings;
+    }> = [
+      { id: 'front-wall', name: 'Front Wall', side: 'front', baseWidth: width, openingsForWall: frontOpenings },
+      { id: 'right-wall', name: 'Right Wall', side: 'right', baseWidth: depth, openingsForWall: rightOpenings },
+      { id: 'back-wall', name: 'Back Wall', side: 'back', baseWidth: width, openingsForWall: backOpenings },
+      { id: 'left-wall', name: 'Left Wall', side: 'left', baseWidth: depth, openingsForWall: leftOpenings },
+    ];
 
-    // Right wall
-    const rightWall: Panel = {
-      id: 'right-wall',
-      name: `Right Wall (${rightDims.width.toFixed(2)}" × ${rightDims.height.toFixed(2)}")`,
-      vertices: [
-        { x: 0, y: 0 },
-        { x: rightDims.width, y: 0 },
-        { x: rightDims.width, y: rightDims.height },
-        { x: 0, y: rightDims.height },
-      ],
-      edges: [
-        { type: 'cut', from: 0, to: 1 },
-        { type: 'cut', from: 1, to: 2 },
-        { type: 'cut', from: 2, to: 3 },
-        { type: 'cut', from: 3, to: 0 },
-      ],
-      position: { x: currentX, y: currentY },
-      rotation: 0,
-      openings: processOpenings(openings, feetToModelInches, rightOpenings),
-    };
-    panels.push(rightWall);
-    currentX += rightDims.width + PANEL_SPACING;
-    maxRowHeight = Math.max(maxRowHeight, rightDims.height);
+    let wallIdx = 0;
+    for (const wallDef of sepWallDefs) {
+      const profile = getWallProfile({
+        roofStyle: roof.style,
+        wallSide: wallDef.side,
+        wallWidth: wallDef.baseWidth,
+        wallHeight: height,
+        roofPitch: roof.pitch,
+        buildingDepth: depth,
+      });
 
-    // Second row
-    currentX = PANEL_SPACING;
-    currentY += maxRowHeight + PANEL_SPACING;
-    maxRowHeight = 0;
+      // Apply joint compensation: shrink width for butt joints on side walls
+      const dims = compensate(wallDef.baseWidth, height, wallDef.side);
+      const scaleX = dims.width / wallDef.baseWidth;
+      const profileVerts = profile.vertices.map(v => ({
+        x: v.x * scaleX,
+        y: v.y, // Height stays — joint compensation only affects width
+      }));
+      const profileMaxH = Math.max(...profileVerts.map(v => v.y));
 
-    // Back wall
-    const backWall: Panel = {
-      id: 'back-wall',
-      name: `Back Wall (${backDims.width.toFixed(2)}" × ${backDims.height.toFixed(2)}")`,
-      vertices: [
-        { x: 0, y: 0 },
-        { x: backDims.width, y: 0 },
-        { x: backDims.width, y: backDims.height },
-        { x: 0, y: backDims.height },
-      ],
-      edges: [
-        { type: 'cut', from: 0, to: 1 },
-        { type: 'cut', from: 1, to: 2 },
-        { type: 'cut', from: 2, to: 3 },
-        { type: 'cut', from: 3, to: 0 },
-      ],
-      position: { x: currentX, y: currentY },
-      rotation: 0,
-      openings: processOpenings(openings, feetToModelInches, backOpenings),
-    };
-    panels.push(backWall);
-    currentX += backDims.width + PANEL_SPACING;
-    maxRowHeight = Math.max(maxRowHeight, backDims.height);
+      const n = profileVerts.length;
+      const edges: Panel['edges'] = [];
+      for (let i = 0; i < n; i++) {
+        edges.push({ type: 'cut', from: i, to: (i + 1) % n });
+      }
 
-    // Left wall
-    const leftWall: Panel = {
-      id: 'left-wall',
-      name: `Left Wall (${leftDims.width.toFixed(2)}" × ${leftDims.height.toFixed(2)}")`,
-      vertices: [
-        { x: 0, y: 0 },
-        { x: leftDims.width, y: 0 },
-        { x: leftDims.width, y: leftDims.height },
-        { x: 0, y: leftDims.height },
-      ],
-      edges: [
-        { type: 'cut', from: 0, to: 1 },
-        { type: 'cut', from: 1, to: 2 },
-        { type: 'cut', from: 2, to: 3 },
-        { type: 'cut', from: 3, to: 0 },
-      ],
-      position: { x: currentX, y: currentY },
-      rotation: 0,
-      openings: processOpenings(openings, feetToModelInches, leftOpenings),
-    };
-    panels.push(leftWall);
-    maxRowHeight = Math.max(maxRowHeight, leftDims.height);
+      const dimLabel = `${dims.width.toFixed(2)}" × ${profileMaxH.toFixed(2)}"`;
+      const wall: Panel = {
+        id: wallDef.id,
+        name: `${wallDef.name} (${dimLabel})`,
+        vertices: profileVerts,
+        edges,
+        position: { x: currentX, y: currentY },
+        rotation: 0,
+        openings: processOpenings(openings, feetToModelInches, wallDef.openingsForWall),
+      };
+      panels.push(wall);
+      currentX += dims.width + PANEL_SPACING;
+      maxRowHeight = Math.max(maxRowHeight, profileMaxH);
+
+      // Start second row after first 2 walls
+      wallIdx++;
+      if (wallIdx === 2) {
+        currentX = PANEL_SPACING;
+        currentY += maxRowHeight + PANEL_SPACING;
+        maxRowHeight = 0;
+      }
+    }
+    maxRowHeight = Math.max(maxRowHeight, height);
 
     // === ROOF PANELS ===
     currentX = PANEL_SPACING;
@@ -774,46 +847,7 @@ export class SeparatePanelUnfoldStrategy implements UnfoldStrategy {
         rotation: 0,
       });
 
-      // Gable ends
-      const gableWidth = depth;
-      currentX = PANEL_SPACING;
-      currentY += roofPanelLength + PANEL_SPACING;
-
-      panels.push({
-        id: 'gable-front',
-        name: 'Gable (Front)',
-        vertices: [
-          { x: 0, y: 0 },
-          { x: gableWidth, y: 0 },
-          { x: gableWidth / 2, y: roofHeight },
-        ],
-        edges: [
-          { type: 'cut', from: 0, to: 1 },
-          { type: 'cut', from: 1, to: 2 },
-          { type: 'cut', from: 2, to: 0 },
-        ],
-        position: { x: currentX, y: currentY },
-        rotation: 0,
-      });
-
-      currentX += gableWidth + PANEL_SPACING;
-
-      panels.push({
-        id: 'gable-back',
-        name: 'Gable (Back)',
-        vertices: [
-          { x: 0, y: 0 },
-          { x: gableWidth, y: 0 },
-          { x: gableWidth / 2, y: roofHeight },
-        ],
-        edges: [
-          { type: 'cut', from: 0, to: 1 },
-          { type: 'cut', from: 1, to: 2 },
-          { type: 'cut', from: 2, to: 0 },
-        ],
-        position: { x: currentX, y: currentY },
-        rotation: 0,
-      });
+      // Gable ends are now integrated into the left/right wall panels as pentagons
     } else if (roof.style === 'hip') {
       const ridgeLength = Math.max(0, width - depth);
       const slopeLength = Math.sqrt(
@@ -933,6 +967,61 @@ export class SeparatePanelUnfoldStrategy implements UnfoldStrategy {
         position: { x: currentX, y: currentY },
         rotation: 0,
       });
+    } else if (roof.style === 'saltbox' || roof.style === 'gambrel' || roof.style === 'mansard') {
+      // These use the same roof panel logic as the paper strategy, just with all-cut edges
+      const roofPanelWidth = width + overhang * 2;
+      const cutEdges = (n: number): Panel['edges'] =>
+        Array.from({ length: n }, (_, i) => ({ type: 'cut' as const, from: i, to: (i + 1) % n }));
+
+      const addRoofPanel = (id: string, name: string, w: number, h: number) => {
+        panels.push({
+          id, name: `${name} (${w.toFixed(2)}" × ${h.toFixed(2)}")`,
+          vertices: [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }],
+          edges: cutEdges(4),
+          position: { x: currentX, y: currentY },
+          rotation: 0,
+        });
+        currentY += h + PANEL_SPACING;
+      };
+
+      if (roof.style === 'saltbox') {
+        const halfD = depth / 2;
+        const ridgePos = halfD * 0.35;
+        const pitchRad2 = Math.atan(roofHeight / halfD);
+        const peakH = ridgePos * Math.tan(pitchRad2);
+        const frontSlopeLen = Math.sqrt(ridgePos * ridgePos + peakH * peakH) + overhang;
+        const backRun = depth - ridgePos;
+        const backSlopeLen = Math.sqrt(backRun * backRun + peakH * peakH) + overhang;
+        addRoofPanel('roof-front', 'Roof (Front)', roofPanelWidth, frontSlopeLen);
+        addRoofPanel('roof-back', 'Roof (Back)', roofPanelWidth, backSlopeLen);
+      } else if (roof.style === 'gambrel') {
+        const halfD = depth / 2;
+        const lowerSpan = halfD * 0.35;
+        const lowerH = lowerSpan * Math.tan(Math.PI / 3);
+        const upperSpan = halfD - lowerSpan;
+        const upperH = upperSpan * Math.tan(pitchRad);
+        const lowerSlopeLen = Math.sqrt(lowerSpan * lowerSpan + lowerH * lowerH) + overhang * 0.5;
+        const upperSlopeLen = Math.sqrt(upperSpan * upperSpan + upperH * upperH) + overhang * 0.5;
+        addRoofPanel('roof-back-lower', 'Roof (Back Lower)', roofPanelWidth, lowerSlopeLen);
+        addRoofPanel('roof-back-upper', 'Roof (Back Upper)', roofPanelWidth, upperSlopeLen);
+        addRoofPanel('roof-front-upper', 'Roof (Front Upper)', roofPanelWidth, upperSlopeLen);
+        addRoofPanel('roof-front-lower', 'Roof (Front Lower)', roofPanelWidth, lowerSlopeLen);
+      } else if (roof.style === 'mansard') {
+        const inset = depth * 0.15;
+        const insetX = width * 0.15;
+        const mansardAngle = (70 * Math.PI) / 180;
+        const mansardH = inset * Math.tan(mansardAngle);
+        const steepSlopeLen = Math.sqrt(inset * inset + mansardH * mansardH);
+        const sideSlopeLen = Math.sqrt(insetX * insetX + mansardH * mansardH);
+        const sideRoofW = depth + overhang * 2;
+        addRoofPanel('roof-back', 'Roof (Back Steep)', roofPanelWidth, steepSlopeLen);
+        addRoofPanel('roof-front', 'Roof (Front Steep)', roofPanelWidth, steepSlopeLen);
+        addRoofPanel('roof-left', 'Roof (Left Steep)', sideRoofW, sideSlopeLen);
+        addRoofPanel('roof-right', 'Roof (Right Steep)', sideRoofW, sideSlopeLen);
+        const topW = width - 2 * insetX;
+        const topD = depth - 2 * inset;
+        addRoofPanel('roof-top', 'Roof (Top)', topW, topD);
+      }
     }
 
     // Generate facade panels if requested
@@ -1017,21 +1106,19 @@ export class SeparatePanelUnfoldStrategy implements UnfoldStrategy {
         maxRowH = 0;
       }
 
+      // Copy polygon shape from structural panel (may be pentagon for gable, etc.)
+      const facadeVerts = panel.vertices.map(v => ({ x: v.x, y: v.y }));
+      const facadeEdges: Panel['edges'] = facadeVerts.map((_, i) => ({
+        type: 'cut' as const,
+        from: i,
+        to: (i + 1) % facadeVerts.length,
+      }));
+
       const facade: Panel = {
         id: `facade-${panel.id}`,
         name: `Facade: ${panel.name.replace(/ \(.*\)/, '')}`,
-        vertices: [
-          { x: 0, y: 0 },
-          { x: panelW, y: 0 },
-          { x: panelW, y: panelH },
-          { x: 0, y: panelH },
-        ],
-        edges: [
-          { type: 'cut', from: 0, to: 1 },
-          { type: 'cut', from: 1, to: 2 },
-          { type: 'cut', from: 2, to: 3 },
-          { type: 'cut', from: 3, to: 0 },
-        ],
+        vertices: facadeVerts,
+        edges: facadeEdges,
         position: { x: facadeX, y: facadeY },
         rotation: 0,
         openings: panel.openings ? [...panel.openings] : undefined,
@@ -1121,21 +1208,19 @@ export class ScoreAndFoldUnfoldStrategy implements UnfoldStrategy {
         const panelW = Math.max(...panel.vertices.map((v) => v.x));
         const panelH = Math.max(...panel.vertices.map((v) => v.y));
 
+        // Copy polygon shape from structural panel (may be pentagon for gable, etc.)
+        const facadeVerts = panel.vertices.map(v => ({ x: v.x, y: v.y }));
+        const facadeEdges: Panel['edges'] = facadeVerts.map((_, i) => ({
+          type: 'cut' as const,
+          from: i,
+          to: (i + 1) % facadeVerts.length,
+        }));
+
         const facade: Panel = {
           id: `facade-${panel.id}`,
           name: `Facade: ${panel.name}`,
-          vertices: [
-            { x: 0, y: 0 },
-            { x: panelW, y: 0 },
-            { x: panelW, y: panelH },
-            { x: 0, y: panelH },
-          ],
-          edges: [
-            { type: 'cut', from: 0, to: 1 },
-            { type: 'cut', from: 1, to: 2 },
-            { type: 'cut', from: 2, to: 3 },
-            { type: 'cut', from: 3, to: 0 },
-          ],
+          vertices: facadeVerts,
+          edges: facadeEdges,
           position: { x: facadeX, y: facadeY },
           rotation: 0,
           openings: panel.openings ? [...panel.openings] : undefined,
@@ -1149,7 +1234,7 @@ export class ScoreAndFoldUnfoldStrategy implements UnfoldStrategy {
       result.facadePanels = facadePanels;
 
       // Recalculate total dimensions
-      const allPanels = [...result.panels, ...facadePanels, ...(result.accessoryPanels || [])];
+      const allPanels = [...result.panels, ...facadePanels, ...(result.accessoryPanels || []), ...(result.detailPanels || [])];
       result.width =
         Math.max(
           ...allPanels.map((p) => p.position.x + Math.max(...p.vertices.map((v) => v.x)))

@@ -92,8 +92,8 @@ function generateFascia(
   } else {
     // Gable/shed/gambrel/mansard/saltbox: eaves on left and right (sides)
     const eaves = [
-      { name: 'Left', length: width + 2 * overhang },
-      { name: 'Right', length: width + 2 * overhang },
+      { name: 'Left', length: depth + 2 * overhang },
+      { name: 'Right', length: depth + 2 * overhang },
     ];
     for (const eave of eaves) {
       const w = eave.length * f;

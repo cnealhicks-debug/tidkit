@@ -93,11 +93,12 @@ function generateChimneyPanels(
   ));
   x += d * scale + PANEL_SPACING;
 
-  // Cap (top)
+  // Cap (top) — slightly wider than chimney body
+  const capW = w * scale + 0.1;
+  const capD = d * scale + 0.1;
   panels.push(createRectPanel(
     `acc-${accessory.id}-cap`, `${accessory.name} - Cap`,
-    (w + 0.5) * scale * feetToInches / feetToInches, // slightly wider cap
-    (d + 0.5) * scale * feetToInches / feetToInches,
+    capW, capD,
     { x, y: startPos.y }, accessory.id
   ));
 

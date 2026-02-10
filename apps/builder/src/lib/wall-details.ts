@@ -225,7 +225,7 @@ function generateQuoins(
         qW, blockH, { x, y }
       ));
       y += blockH + PANEL_SPACING * 0.2;
-      stackH += blockH + PANEL_SPACING * 0.2;
+      stackH += blockH;
       blockIdx++;
     }
 
