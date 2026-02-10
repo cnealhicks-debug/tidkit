@@ -8,6 +8,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useBuildingStore } from '@/stores/buildingStore';
 import { unfoldBuilding, patternToSVG, UnfoldedPattern } from '@/lib/unfold';
+import { MATERIAL_PROPERTIES, DEFAULT_MATERIAL } from '@/types/building';
 
 interface UnfoldedViewProps {
   buildingName?: string;
@@ -86,19 +87,25 @@ export function UnfoldedView({ buildingName = 'Building' }: UnfoldedViewProps) {
 
       {/* Panel count info */}
       <div className="mt-4 text-sm text-gray-600">
-        <strong>{pattern.panels.length}</strong> panels • <strong>{pattern.glueTabs.length}</strong> glue tabs
+        <strong>{pattern.panels.length}</strong> structural panels
+        {pattern.glueTabs.length > 0 && <> • <strong>{pattern.glueTabs.length}</strong> glue tabs</>}
+        {pattern.facadePanels && pattern.facadePanels.length > 0 && (
+          <> • <strong>{pattern.facadePanels.length}</strong> facade sheets</>
+        )}
+        <span className="ml-2 text-gray-400">|</span>
+        <span className="ml-2">
+          {MATERIAL_PROPERTIES[pattern.materialType || 'paper'].icon}{' '}
+          {MATERIAL_PROPERTIES[pattern.materialType || 'paper'].label}
+        </span>
       </div>
 
-      {/* Assembly instructions */}
+      {/* Assembly instructions (dynamic from material) */}
       <div className="mt-6 p-4 bg-blue-50 rounded-lg">
         <h3 className="font-semibold text-blue-900 mb-2">Assembly Instructions</h3>
         <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-          <li>Print the pattern at 100% scale (no scaling)</li>
-          <li>Cut along solid black lines</li>
-          <li>Score and fold along dashed lines (red = mountain, blue = valley)</li>
-          <li>Apply glue to gray tabs and assemble walls into a box</li>
-          <li>Attach roof panels, folding at the ridge</li>
-          <li>Glue gable ends (if applicable) to close the roof</li>
+          {(pattern.assemblySteps || MATERIAL_PROPERTIES.paper.assemblySteps).map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
         </ol>
       </div>
 
@@ -109,6 +116,7 @@ export function UnfoldedView({ buildingName = 'Building' }: UnfoldedViewProps) {
           <p><strong>Scale:</strong> {params.scale.name} (1:{params.scale.ratio})</p>
           <p><strong>Real-world size:</strong> {params.dimensions.width}' W × {params.dimensions.depth}' D × {params.dimensions.height}' H</p>
           <p><strong>Model size:</strong> {(params.dimensions.width * 12 / params.scale.ratio).toFixed(2)}" × {(params.dimensions.depth * 12 / params.scale.ratio).toFixed(2)}" × {(params.dimensions.height * 12 / params.scale.ratio).toFixed(2)}"</p>
+          <p><strong>Material:</strong> {MATERIAL_PROPERTIES[pattern.materialType || 'paper'].label}</p>
         </div>
       </div>
     </div>

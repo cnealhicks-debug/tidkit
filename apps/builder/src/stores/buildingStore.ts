@@ -18,6 +18,11 @@ import {
   AccessoryType,
   AccessoryCategory,
   AccessoryPosition,
+  MaterialType,
+  MaterialConfig,
+  JointMethod,
+  MATERIAL_PROPERTIES,
+  DEFAULT_MATERIAL,
   ACCESSORY_PRESETS,
   DEFAULT_BUILDING,
   MODEL_SCALES,
@@ -97,6 +102,12 @@ interface BuildingState {
   updateFloor: (id: string, updates: Partial<FloorConfig>) => void;
   setInteriorEnabled: (enabled: boolean) => void;
   updateInterior: (updates: Partial<InteriorConfig>) => void;
+
+  // Actions - Material
+  setMaterialType: (type: MaterialType) => void;
+  setMaterialThickness: (thickness: number) => void;
+  setJointMethod: (method: JointMethod) => void;
+  setGenerateFacades: (generate: boolean) => void;
 
   // Actions - Accessories
   addAccessory: (accessory: Accessory) => void;
@@ -315,6 +326,56 @@ export const useBuildingStore = create<BuildingState>((set, get) => ({
         },
       },
     })),
+
+  // Material actions
+  setMaterialType: (type) =>
+    set((state) => {
+      const props = MATERIAL_PROPERTIES[type];
+      return {
+        params: {
+          ...state.params,
+          material: {
+            type,
+            thickness: props.defaultThickness,
+            jointMethod: props.defaultJointMethod,
+            generateFacades: !props.foldable, // auto-enable for non-foldable materials
+          },
+        },
+      };
+    }),
+
+  setMaterialThickness: (thickness) =>
+    set((state) => {
+      const current = state.params.material || DEFAULT_MATERIAL;
+      return {
+        params: {
+          ...state.params,
+          material: { ...current, thickness },
+        },
+      };
+    }),
+
+  setJointMethod: (method) =>
+    set((state) => {
+      const current = state.params.material || DEFAULT_MATERIAL;
+      return {
+        params: {
+          ...state.params,
+          material: { ...current, jointMethod: method },
+        },
+      };
+    }),
+
+  setGenerateFacades: (generate) =>
+    set((state) => {
+      const current = state.params.material || DEFAULT_MATERIAL;
+      return {
+        params: {
+          ...state.params,
+          material: { ...current, generateFacades: generate },
+        },
+      };
+    }),
 
   // Accessory actions
   addAccessory: (accessory) =>

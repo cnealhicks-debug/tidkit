@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { useBuildingStore, type BuildingSurface, type LibraryTexture } from '@/stores/buildingStore';
-import { MODEL_SCALES, RoofStyle, ROOF_STYLE_INFO } from '@/types/building';
+import { MODEL_SCALES, RoofStyle, ROOF_STYLE_INFO, MaterialType, MATERIAL_PROPERTIES, DEFAULT_MATERIAL } from '@/types/building';
 import { TexturePicker } from './TexturePicker';
 
 export function ControlPanel() {
@@ -23,6 +23,10 @@ export function ControlPanel() {
     setRoofPitch,
     setRoofOverhang,
     setScaleByName,
+    setMaterialType,
+    setMaterialThickness,
+    setJointMethod,
+    setGenerateFacades,
     toggleWireframe,
     toggleDimensions,
     resetToDefaults,
@@ -237,6 +241,15 @@ export function ControlPanel() {
         </div>
       </div>
 
+      {/* Material Section */}
+      <MaterialSection
+        material={params.material || DEFAULT_MATERIAL}
+        onTypeChange={setMaterialType}
+        onThicknessChange={setMaterialThickness}
+        onJointMethodChange={setJointMethod}
+        onGenerateFacadesChange={setGenerateFacades}
+      />
+
       {/* Textures Section */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Textures</h3>
@@ -328,6 +341,120 @@ export function ControlPanel() {
           onClose={() => setTexturePicker(null)}
         />
       )}
+    </div>
+  );
+}
+
+// =============================================================================
+// Material Section Component
+// =============================================================================
+
+import { MaterialConfig, JointMethod } from '@/types/building';
+
+interface MaterialSectionProps {
+  material: MaterialConfig;
+  onTypeChange: (type: MaterialType) => void;
+  onThicknessChange: (thickness: number) => void;
+  onJointMethodChange: (method: JointMethod) => void;
+  onGenerateFacadesChange: (generate: boolean) => void;
+}
+
+const materialTypes: MaterialType[] = ['paper', 'foamcore', 'plywood', 'chipboard'];
+
+function MaterialSection({
+  material,
+  onTypeChange,
+  onThicknessChange,
+  onJointMethodChange,
+  onGenerateFacadesChange,
+}: MaterialSectionProps) {
+  const props = MATERIAL_PROPERTIES[material.type];
+
+  return (
+    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Material</h3>
+
+      {/* Material type grid */}
+      <div className="grid grid-cols-2 gap-1.5 mb-3">
+        {materialTypes.map((type) => {
+          const matProps = MATERIAL_PROPERTIES[type];
+          return (
+            <button
+              key={type}
+              onClick={() => onTypeChange(type)}
+              title={matProps.description}
+              className={`px-2 py-2 text-xs rounded transition-colors flex flex-col items-center gap-0.5 ${
+                material.type === type
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+              }`}
+            >
+              <span className="text-base">{matProps.icon}</span>
+              <span className="font-medium">{matProps.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Thickness presets */}
+      <div className="mb-3">
+        <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Thickness</label>
+        <div className="flex flex-wrap gap-1">
+          {props.thicknessOptions.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onThicknessChange(opt.value)}
+              className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                Math.abs(material.thickness - opt.value) < 0.001
+                  ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-500 text-blue-700 dark:text-blue-300'
+                  : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Joint method (only show if multiple options) */}
+      {props.jointMethods.length > 1 && (
+        <div className="mb-3">
+          <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Joint Method</label>
+          <div className="flex gap-1">
+            {props.jointMethods.map((method) => (
+              <button
+                key={method}
+                onClick={() => onJointMethodChange(method)}
+                className={`px-2.5 py-1 text-xs rounded border transition-colors capitalize ${
+                  material.jointMethod === method
+                    ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-500 text-blue-700 dark:text-blue-300'
+                    : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'
+                }`}
+              >
+                {method === 'glue-tab' ? 'Glue Tab' : method === 'butt' ? 'Butt Joint' : 'Slot & Tab'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Facade toggle (for non-paper materials) */}
+      {!props.foldable && (
+        <label className="flex items-center gap-2 cursor-pointer mb-2">
+          <input
+            type="checkbox"
+            checked={material.generateFacades}
+            onChange={(e) => onGenerateFacadesChange(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <span className="text-xs text-gray-700 dark:text-gray-300">Generate facade sheets</span>
+        </label>
+      )}
+
+      {/* Material info */}
+      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+        {props.description}
+      </p>
     </div>
   );
 }

@@ -8,6 +8,7 @@
 import { useState, useMemo } from 'react';
 import { useBuildingStore } from '@/stores/buildingStore';
 import { unfoldBuilding, patternToSVG, UnfoldedPattern } from '@/lib/unfold';
+import { MATERIAL_PROPERTIES, DEFAULT_MATERIAL } from '@/types/building';
 
 interface ExportPanelProps {
   isOpen: boolean;
@@ -141,7 +142,13 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
               {pattern.width.toFixed(2)}" × {pattern.height.toFixed(2)}"
             </p>
             <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-              {pattern.panels.length} panels • {pattern.glueTabs.length} glue tabs
+              {pattern.panels.length} panels
+              {pattern.glueTabs.length > 0 && ` • ${pattern.glueTabs.length} glue tabs`}
+              {pattern.facadePanels && pattern.facadePanels.length > 0 && ` • ${pattern.facadePanels.length} facade sheets`}
+            </p>
+            <p className="text-xs text-blue-500 dark:text-blue-400 mt-0.5">
+              {MATERIAL_PROPERTIES[pattern.materialType || 'paper'].icon}{' '}
+              {MATERIAL_PROPERTIES[pattern.materialType || 'paper'].label}
             </p>
           </div>
         </div>
@@ -310,11 +317,11 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
           </button>
         </div>
 
-        {/* Tip */}
+        {/* Tip (dynamic based on material) */}
         <div className="p-4">
           <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-3">
             <p className="text-xs text-blue-700 dark:text-blue-300">
-              <strong>Tip:</strong> For best results, print at 100% scale (no scaling). Use high-quality cardstock (65-110 lb) for sturdier models.
+              <strong>Tip:</strong> {MATERIAL_PROPERTIES[pattern.materialType || 'paper'].exportTip}
             </p>
           </div>
         </div>
@@ -477,14 +484,9 @@ function downloadPDF(
 
         ${includeInstructions ? `
         <div class="instructions">
-          <h3>Assembly Instructions</h3>
+          <h3>Assembly Instructions (${MATERIAL_PROPERTIES[pattern.materialType || 'paper'].label})</h3>
           <ol>
-            <li>Print this pattern at 100% scale (no scaling)</li>
-            <li>Cut along solid black lines</li>
-            <li>Score and fold along dashed lines (red = mountain fold, blue = valley fold)</li>
-            <li>Apply glue to gray tabs and assemble walls into a box shape</li>
-            <li>Attach roof panels, folding at the ridge line</li>
-            <li>Glue gable ends (if applicable) to close the roof</li>
+            ${(pattern.assemblySteps || MATERIAL_PROPERTIES[pattern.materialType || 'paper'].assemblySteps).map(step => `<li>${step}</li>`).join('\n            ')}
           </ol>
         </div>
         ` : ''}
@@ -542,8 +544,10 @@ function downloadTiledPDF(
     .cut { stroke: #000000; stroke-width: 0.02; fill: none; }
     .mountain { stroke: #ff0000; stroke-width: 0.015; stroke-dasharray: 0.1 0.05; fill: none; }
     .valley { stroke: #0000ff; stroke-width: 0.015; stroke-dasharray: 0.05 0.05; fill: none; }
+    .score { stroke: #ff8800; stroke-width: 0.015; stroke-dasharray: 0.02 0.04; fill: none; }
     .glue-tab { stroke: #888888; stroke-width: 0.01; fill: #f0f0f0; }
     .panel { fill: #ffffff; stroke: none; }
+    .facade-panel { fill: #fffff0; stroke: none; }
     .opening-door { fill: #d4c4a8; stroke: #000000; stroke-width: 0.02; }
     .opening-window { fill: #b8d4e8; stroke: #000000; stroke-width: 0.02; }
     .label { font-family: Arial, sans-serif; font-size: 0.15px; fill: #333333; }
@@ -658,15 +662,11 @@ function downloadTiledPDF(
           </div>
 
           <div class="instructions">
-            <h3>Building Assembly</h3>
+            <h3>Building Assembly (${MATERIAL_PROPERTIES[pattern.materialType || 'paper'].label})</h3>
             <ol>
               <li>Print all ${pages.length} tile pages at 100% scale (no scaling)</li>
               <li>Align tiles using the corner alignment marks and tape together</li>
-              <li>Cut along solid black lines</li>
-              <li>Score and fold along dashed lines (red = mountain fold, blue = valley fold)</li>
-              <li>Apply glue to gray tabs and assemble walls into a box shape</li>
-              <li>Attach roof panels, folding at the ridge line</li>
-              <li>Glue gable ends (if applicable) to close the roof</li>
+              ${(pattern.assemblySteps || MATERIAL_PROPERTIES[pattern.materialType || 'paper'].assemblySteps).map(step => `<li>${step}</li>`).join('\n              ')}
             </ol>
           </div>
 

@@ -9,6 +9,139 @@ import { MODEL_SCALES as SHARED_SCALES, type ModelScale } from '@tidkit/config';
 
 export type RoofStyle = 'flat' | 'gable' | 'hip' | 'shed' | 'gambrel' | 'mansard' | 'saltbox';
 
+// =============================================================================
+// Material Types
+// =============================================================================
+
+export type MaterialType = 'paper' | 'foamcore' | 'plywood' | 'chipboard';
+
+export type JointMethod = 'glue-tab' | 'butt' | 'slot-tab';
+
+export interface MaterialConfig {
+  type: MaterialType;
+  thickness: number;       // In inches (model scale)
+  jointMethod: JointMethod;
+  generateFacades: boolean; // Whether to generate separate texture facade sheets
+}
+
+export interface MaterialProperties {
+  label: string;
+  description: string;
+  icon: string;
+  foldable: boolean;
+  conditionalFold?: boolean; // true for chipboard (foldable if thin enough)
+  maxFoldThickness?: number; // Max thickness in inches for folding (chipboard)
+  thicknessOptions: { label: string; value: number }[];
+  jointMethods: JointMethod[];
+  defaultJointMethod: JointMethod;
+  defaultThickness: number;
+  exportTip: string;
+  assemblySteps: string[];
+}
+
+export const MATERIAL_PROPERTIES: Record<MaterialType, MaterialProperties> = {
+  paper: {
+    label: 'Paper/Cardstock',
+    description: 'Traditional papercraft — fold and glue',
+    icon: '📄',
+    foldable: true,
+    thicknessOptions: [
+      { label: '65 lb', value: 0.008 },
+      { label: '80 lb', value: 0.01 },
+      { label: '110 lb', value: 0.012 },
+    ],
+    jointMethods: ['glue-tab'],
+    defaultJointMethod: 'glue-tab',
+    defaultThickness: 0.01,
+    exportTip: 'For best results, print at 100% scale (no scaling). Use high-quality cardstock (65-110 lb) for sturdier models.',
+    assemblySteps: [
+      'Print the pattern at 100% scale (no scaling)',
+      'Cut along solid black lines',
+      'Score and fold along dashed lines (red = mountain, blue = valley)',
+      'Apply glue to gray tabs and assemble walls into a box',
+      'Attach roof panels, folding at the ridge',
+      'Glue gable ends (if applicable) to close the roof',
+    ],
+  },
+  foamcore: {
+    label: 'Foamcore',
+    description: 'Rigid foam board — separate flat panels',
+    icon: '🧱',
+    foldable: false,
+    thicknessOptions: [
+      { label: '3mm', value: 0.118 },
+      { label: '5mm', value: 0.197 },
+      { label: '10mm', value: 0.394 },
+    ],
+    jointMethods: ['butt'],
+    defaultJointMethod: 'butt',
+    defaultThickness: 0.197,
+    exportTip: 'Print facade sheets on paper and glue onto foamcore panels. Cut foamcore panels to the structural dimensions shown.',
+    assemblySteps: [
+      'Cut foamcore panels to the dimensions shown (all edges are cut lines)',
+      'Front and back panels are full width; left and right panels are shortened by 2x material thickness',
+      'Glue side panels between front and back panels at butt joints',
+      'Print facade sheets separately and glue onto structural panels for texture',
+      'Attach roof panels on top',
+    ],
+  },
+  plywood: {
+    label: 'Plywood/MDF',
+    description: 'Thin wood — slot-and-tab or butt joints',
+    icon: '🪵',
+    foldable: false,
+    thicknessOptions: [
+      { label: '1/16"', value: 0.0625 },
+      { label: '1/8"', value: 0.125 },
+      { label: '3/16"', value: 0.1875 },
+      { label: '1/4"', value: 0.25 },
+    ],
+    jointMethods: ['butt', 'slot-tab'],
+    defaultJointMethod: 'slot-tab',
+    defaultThickness: 0.125,
+    exportTip: 'Use the structural panel outlines as cutting templates for wood. Facade sheets can be printed on paper and glued on.',
+    assemblySteps: [
+      'Transfer or print panel outlines onto plywood/MDF as cutting guides',
+      'Cut panels using scroll saw, laser cutter, or CNC',
+      'If using slot-and-tab joints: insert tabs into matching slots and glue',
+      'If using butt joints: glue panels edge-to-face at corners',
+      'Print facade sheets on paper and glue onto structural panels',
+      'Attach roof panels',
+    ],
+  },
+  chipboard: {
+    label: 'Chipboard/Matboard',
+    description: 'Thick card — score and fold or separate panels',
+    icon: '📋',
+    foldable: false,
+    conditionalFold: true,
+    maxFoldThickness: 0.04, // ~1mm — above this, use separate panels
+    thicknessOptions: [
+      { label: '0.5mm', value: 0.02 },
+      { label: '1mm', value: 0.04 },
+      { label: '1/16"', value: 0.0625 },
+    ],
+    jointMethods: ['butt'],
+    defaultJointMethod: 'butt',
+    defaultThickness: 0.04,
+    exportTip: 'For thin chipboard (< 1mm), score fold lines deeply with a craft knife. For thicker matboard, cut separate panels and butt-join them.',
+    assemblySteps: [
+      'Cut panels along solid lines using a craft knife and straightedge',
+      'For thin chipboard: score fold lines deeply (do not cut through), then fold',
+      'For thick matboard: cut separate panels and glue at butt joints',
+      'Print facade sheets separately and glue onto structural panels for texture',
+      'Attach roof panels',
+    ],
+  },
+};
+
+export const DEFAULT_MATERIAL: MaterialConfig = {
+  type: 'paper',
+  thickness: MATERIAL_PROPERTIES.paper.defaultThickness,
+  jointMethod: MATERIAL_PROPERTIES.paper.defaultJointMethod,
+  generateFacades: false,
+};
+
 // Roof style descriptions for UI
 export const ROOF_STYLE_INFO: Record<RoofStyle, { label: string; description: string; icon: string }> = {
   flat: { label: 'Flat', description: 'Simple flat roof', icon: '▭' },
@@ -58,6 +191,8 @@ export interface BuildingParams {
   // Multi-story support
   floors: FloorConfig[];
   interior: InteriorConfig;
+  // Material type (optional — defaults to paper for backward compatibility)
+  material?: MaterialConfig;
 }
 
 export interface TextureAssignment {
@@ -103,8 +238,9 @@ export interface Panel {
   id: string;
   name: string;
   vertices: [number, number][];  // 2D vertices in model units
-  foldEdges: { from: number; to: number; type: 'mountain' | 'valley' }[];
+  foldEdges: { from: number; to: number; type: 'mountain' | 'valley' | 'score' }[];
   cutEdges: { from: number; to: number }[];
+  slotEdges?: { from: number; to: number; slotWidth: number; slotDepth: number; count: number }[];
   connectsTo?: string;
   textureId?: string;
 }
