@@ -12,7 +12,7 @@ import { BuildingMesh } from './BuildingMesh';
 import { useBuildingStore } from '@/stores/buildingStore';
 
 function SceneContent() {
-  const { params } = useBuildingStore();
+  const params = useBuildingStore((s) => s.params);
 
   // Calculate camera distance based on building size
   const maxDimension = Math.max(
@@ -62,8 +62,8 @@ function SceneContent() {
         <meshStandardMaterial color="#e5e7eb" />
       </mesh>
 
-      {/* The building */}
-      <BuildingMesh />
+      {/* The building — key forces full remount on material type change */}
+      <BuildingMesh key={params.material?.type || 'paper'} />
 
       {/* Controls */}
       <OrbitControls

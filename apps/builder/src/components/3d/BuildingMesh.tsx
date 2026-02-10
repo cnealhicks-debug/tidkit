@@ -6,11 +6,12 @@
  * Renders material thickness for non-paper materials.
  */
 
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
+import { useThree } from '@react-three/fiber';
 import { Edges } from '@react-three/drei';
 import * as THREE from 'three';
 import { useBuildingStore } from '@/stores/buildingStore';
-import { MATERIAL_PROPERTIES, DEFAULT_MATERIAL, type MaterialType } from '@/types/building';
+import { DEFAULT_MATERIAL, type MaterialType } from '@/types/building';
 
 // Material colors for 3D preview
 const MATERIAL_COLORS: Record<MaterialType, { wall: string; edge: string }> = {
@@ -22,13 +23,19 @@ const MATERIAL_COLORS: Record<MaterialType, { wall: string; edge: string }> = {
 
 export function BuildingMesh() {
   const groupRef = useRef<THREE.Group>(null);
-  const { params, showWireframe } = useBuildingStore();
+  const params = useBuildingStore((s) => s.params);
+  const showWireframe = useBuildingStore((s) => s.showWireframe);
+  const invalidate = useThree((s) => s.invalidate);
 
   const { width, depth, height } = params.dimensions;
   const { style: roofStyle, pitch, overhang } = params.roof;
   const material = params.material || DEFAULT_MATERIAL;
-  const materialProps = MATERIAL_PROPERTIES[material.type];
   const colors = MATERIAL_COLORS[material.type];
+
+  // Force R3F to re-render when material properties change
+  useEffect(() => {
+    invalidate();
+  }, [material.type, material.thickness, material.jointMethod, colors.wall, invalidate]);
 
   // Calculate roof height based on pitch
   const roofHeight = useMemo(() => {
