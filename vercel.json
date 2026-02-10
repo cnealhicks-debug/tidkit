@@ -1,12 +1,3 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "pnpm install",
-  "buildCommand": "pnpm turbo build --filter=@tidkit/web",
-  "outputDirectory": "apps/web/.next",
-  "rewrites": [
-    { "source": "/builder", "destination": "https://tidkit-builder.vercel.app" },
-    { "source": "/builder/:path*", "destination": "https://tidkit-builder.vercel.app/:path*" },
-    { "source": "/studio", "destination": "https://tidkit-studio.vercel.app" },
-    { "source": "/studio/:path*", "destination": "https://tidkit-studio.vercel.app/:path*" }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }

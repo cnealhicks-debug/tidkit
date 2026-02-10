@@ -8,9 +8,6 @@ const nextConfig = {
     '@tidkit/database',
   ],
 
-  // Output configuration for Vercel
-  output: 'standalone',
-
   // Allow Web Workers
   webpack: (config) => {
     config.module.rules.push({

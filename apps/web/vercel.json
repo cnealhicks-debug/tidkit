@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd ../.. && pnpm install",
+  "buildCommand": "cd ../.. && pnpm turbo build --filter=@tidkit/web",
+  "rewrites": [
+    { "source": "/builder", "destination": "https://tidkit-builder.vercel.app" },
+    { "source": "/builder/:path*", "destination": "https://tidkit-builder.vercel.app/:path*" },
+    { "source": "/studio", "destination": "https://tidkit-studio.vercel.app" },
+    { "source": "/studio/:path*", "destination": "https://tidkit-studio.vercel.app/:path*" }
+  ]
+}

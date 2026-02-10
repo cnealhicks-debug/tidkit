@@ -11,8 +11,6 @@ const nextConfig = {
   // Disable React strict mode for Three.js compatibility
   reactStrictMode: false,
 
-  // Output configuration for Vercel
-  output: 'standalone',
 };
 
 export default nextConfig;
