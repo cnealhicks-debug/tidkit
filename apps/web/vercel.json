@@ -2,6 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "cd ../.. && pnpm install",
   "buildCommand": "cd ../.. && pnpm turbo build --filter=@tidkit/web",
+  "outputDirectory": ".next",
   "rewrites": [
     { "source": "/builder", "destination": "https://tidkit-builder.vercel.app" },
     { "source": "/builder/:path*", "destination": "https://tidkit-builder.vercel.app/:path*" },
