@@ -11,7 +11,7 @@ import {
   DEFAULT_MATERIAL,
 } from '@/types/building';
 import type { Panel, GlueTab, UnfoldedPattern, Point2D, PanelOpening } from './unfold';
-import { compensateButtJoint, generateSlotTabJoints } from './material-compensation';
+import { compensateButtJoint, compensateMiterJoint, generateSlotTabJoints } from './material-compensation';
 
 // =============================================================================
 // Strategy Interface
@@ -541,11 +541,13 @@ export class SeparatePanelUnfoldStrategy implements UnfoldStrategy {
     const panels: Panel[] = [];
     const glueTabs: GlueTab[] = [];
 
-    // Butt joint compensation: side panels are shortened
-    const frontDims = compensateButtJoint(width, height, 'front', thickness);
-    const backDims = compensateButtJoint(width, height, 'back', thickness);
-    const leftDims = compensateButtJoint(depth, height, 'left', thickness);
-    const rightDims = compensateButtJoint(depth, height, 'right', thickness);
+    // Joint compensation: miter keeps full dims, butt shortens side panels
+    const isMiter = material.jointMethod === 'miter';
+    const compensate = isMiter ? compensateMiterJoint : (w: number, h: number, side: 'front' | 'back' | 'left' | 'right') => compensateButtJoint(w, h, side, thickness);
+    const frontDims = compensate(width, height, 'front');
+    const backDims = compensate(width, height, 'back');
+    const leftDims = compensate(depth, height, 'left');
+    const rightDims = compensate(depth, height, 'right');
 
     let currentX = PANEL_SPACING;
     let currentY = PANEL_SPACING;

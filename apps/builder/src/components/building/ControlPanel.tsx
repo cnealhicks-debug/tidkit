@@ -431,7 +431,7 @@ function MaterialSection({
                     : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'
                 }`}
               >
-                {method === 'glue-tab' ? 'Glue Tab' : method === 'butt' ? 'Butt Joint' : 'Slot & Tab'}
+                {method === 'glue-tab' ? 'Glue Tab' : method === 'butt' ? 'Butt Joint' : method === 'slot-tab' ? 'Slot & Tab' : 'Miter'}
               </button>
             ))}
           </div>

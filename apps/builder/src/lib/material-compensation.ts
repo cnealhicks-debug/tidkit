@@ -30,6 +30,20 @@ export function compensateButtJoint(
   return { width: panelWidth, height: panelHeight };
 }
 
+/**
+ * Miter joint dimension compensation.
+ * For mitered joints, all panels keep their full outer dimensions.
+ * Each panel's mating edges are cut at 45° so they meet cleanly.
+ * No dimensional shortening needed — the bevel removes material at the edge.
+ */
+export function compensateMiterJoint(
+  panelWidth: number,
+  panelHeight: number,
+): { width: number; height: number } {
+  // Miter joints don't change panel outer dimensions
+  return { width: panelWidth, height: panelHeight };
+}
+
 export interface SlotTabJoint {
   // Slot cutouts on one panel
   slots: {

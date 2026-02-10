@@ -2,42 +2,75 @@
 
 /**
  * TidKit Builder - 3D Building Mesh Component
- * Generates parametric building geometry based on store parameters
+ * Generates parametric building geometry based on store parameters.
+ * Renders material thickness for non-paper materials.
  */
 
 import { useMemo, useRef } from 'react';
 import { Edges } from '@react-three/drei';
 import * as THREE from 'three';
 import { useBuildingStore } from '@/stores/buildingStore';
+import { MATERIAL_PROPERTIES, DEFAULT_MATERIAL, type MaterialType } from '@/types/building';
+
+// Material colors for 3D preview
+const MATERIAL_COLORS: Record<MaterialType, { wall: string; edge: string }> = {
+  paper: { wall: '#d4a373', edge: '#c49363' },
+  foamcore: { wall: '#f0ead6', edge: '#e0dac6' },
+  plywood: { wall: '#c4a46c', edge: '#a4844c' },
+  chipboard: { wall: '#b0a090', edge: '#908070' },
+};
 
 export function BuildingMesh() {
   const groupRef = useRef<THREE.Group>(null);
   const { params, showWireframe } = useBuildingStore();
 
-  // Convert feet to Three.js units (1 unit = 1 foot for easier visualization)
   const { width, depth, height } = params.dimensions;
   const { style: roofStyle, pitch, overhang } = params.roof;
+  const material = params.material || DEFAULT_MATERIAL;
+  const materialProps = MATERIAL_PROPERTIES[material.type];
+  const colors = MATERIAL_COLORS[material.type];
 
   // Calculate roof height based on pitch
   const roofHeight = useMemo(() => {
     if (roofStyle === 'flat') return 0;
-    // For gable/hip: height = (width/2) * tan(pitch)
     const pitchRad = (pitch * Math.PI) / 180;
     return (depth / 2) * Math.tan(pitchRad);
   }, [roofStyle, pitch, depth]);
 
-  // Fallback colors (used when no texture is assigned)
-  const wallColor = '#d4a373';
+  // Wall thickness in feet (convert from model inches through scale)
+  // For 3D preview, exaggerate thickness so it's visible at building scale
+  const wallThicknessFeet = useMemo(() => {
+    if (material.type === 'paper') return 0;
+    // Convert model inches to feet, then exaggerate for visibility
+    // Real thickness at scale would be invisible, so we use a visible minimum
+    const realThicknessFeet = material.thickness * params.scale.ratio / 12;
+    return Math.max(realThicknessFeet, 0.4); // At least 0.4 feet (~5") visible thickness
+  }, [material.type, material.thickness, params.scale.ratio]);
+
+  const showThickness = material.type !== 'paper' && wallThicknessFeet > 0;
   const roofColor = '#5c4033';
 
   return (
     <group ref={groupRef} position={[0, height / 2, 0]}>
-      {/* Main building box (walls) */}
-      <mesh position={[0, 0, 0]}>
-        <boxGeometry args={[width, height, depth]} />
-        <meshStandardMaterial color={wallColor} />
-        {showWireframe && <Edges color="black" threshold={15} />}
-      </mesh>
+      {/* Walls */}
+      {showThickness ? (
+        <ThickWalls
+          width={width}
+          depth={depth}
+          height={height}
+          thickness={wallThicknessFeet}
+          wallColor={colors.wall}
+          edgeColor={colors.edge}
+          showWireframe={showWireframe}
+          jointMethod={material.jointMethod}
+        />
+      ) : (
+        <mesh position={[0, 0, 0]}>
+          <boxGeometry args={[width, height, depth]} />
+          <meshStandardMaterial color={colors.wall} />
+          {showWireframe && <Edges color="black" threshold={15} />}
+        </mesh>
+      )}
 
       {/* Roof based on style */}
       {roofStyle === 'flat' && (
@@ -87,7 +120,71 @@ export function BuildingMesh() {
   );
 }
 
-// Gable Roof Component
+// =============================================================================
+// Thick Walls — renders 4 separate wall panels with visible material thickness
+// =============================================================================
+
+function ThickWalls({
+  width,
+  depth,
+  height,
+  thickness,
+  wallColor,
+  edgeColor,
+  showWireframe,
+  jointMethod,
+}: {
+  width: number;
+  depth: number;
+  height: number;
+  thickness: number;
+  wallColor: string;
+  edgeColor: string;
+  showWireframe: boolean;
+  jointMethod: string;
+}) {
+  // For butt joints: front/back are full width, sides are shortened
+  // For miter joints: all panels are full dimension (miter happens at edges)
+  const isMiter = jointMethod === 'miter';
+  const sideDepth = isMiter ? depth : depth - thickness * 2;
+
+  return (
+    <group>
+      {/* Front wall */}
+      <mesh position={[0, 0, depth / 2 - thickness / 2]}>
+        <boxGeometry args={[width, height, thickness]} />
+        <meshStandardMaterial color={wallColor} />
+        {showWireframe && <Edges color="black" />}
+      </mesh>
+
+      {/* Back wall */}
+      <mesh position={[0, 0, -depth / 2 + thickness / 2]}>
+        <boxGeometry args={[width, height, thickness]} />
+        <meshStandardMaterial color={wallColor} />
+        {showWireframe && <Edges color="black" />}
+      </mesh>
+
+      {/* Left wall (between front and back for butt joints) */}
+      <mesh position={[-width / 2 + thickness / 2, 0, 0]}>
+        <boxGeometry args={[thickness, height, sideDepth]} />
+        <meshStandardMaterial color={edgeColor} />
+        {showWireframe && <Edges color="black" />}
+      </mesh>
+
+      {/* Right wall */}
+      <mesh position={[width / 2 - thickness / 2, 0, 0]}>
+        <boxGeometry args={[thickness, height, sideDepth]} />
+        <meshStandardMaterial color={edgeColor} />
+        {showWireframe && <Edges color="black" />}
+      </mesh>
+    </group>
+  );
+}
+
+// =============================================================================
+// Roof Components (unchanged)
+// =============================================================================
+
 function GableRoof({
   width,
   depth,
@@ -108,34 +205,25 @@ function GableRoof({
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
 
-    // Gable roof: two sloped panels meeting at a ridge
     const w = width / 2 + overhang;
     const d = depth / 2 + overhang;
     const h = roofHeight;
 
-    // Calculate roof panel dimensions
-    const roofPanelWidth = Math.sqrt(d * d + h * h);
-
-    // Vertices for both roof panels
     const vertices = new Float32Array([
-      // Left roof panel
-      -w, baseHeight / 2, -d, // 0: back-left-bottom
-      -w, baseHeight / 2, d,  // 1: front-left-bottom
-      0, baseHeight / 2 + h, d,   // 2: front-ridge
-      0, baseHeight / 2 + h, -d,  // 3: back-ridge
+      -w, baseHeight / 2, -d,
+      -w, baseHeight / 2, d,
+      0, baseHeight / 2 + h, d,
+      0, baseHeight / 2 + h, -d,
 
-      // Right roof panel
-      w, baseHeight / 2, -d,  // 4: back-right-bottom
-      w, baseHeight / 2, d,   // 5: front-right-bottom
-      0, baseHeight / 2 + h, d,   // 6: front-ridge (same as 2)
-      0, baseHeight / 2 + h, -d,  // 7: back-ridge (same as 3)
+      w, baseHeight / 2, -d,
+      w, baseHeight / 2, d,
+      0, baseHeight / 2 + h, d,
+      0, baseHeight / 2 + h, -d,
     ]);
 
     const indices = new Uint16Array([
-      // Left panel
       0, 1, 2,
       0, 2, 3,
-      // Right panel
       5, 4, 7,
       5, 7, 6,
     ]);
@@ -155,7 +243,6 @@ function GableRoof({
   );
 }
 
-// Hip Roof Component (simplified - 4 sloped panels)
 function HipRoof({
   width,
   depth,
@@ -179,30 +266,23 @@ function HipRoof({
     const w = width / 2 + overhang;
     const d = depth / 2 + overhang;
     const h = roofHeight;
-    const ridgeLen = Math.max(0, (width - depth) / 2); // Ridge length for rectangular buildings
+    const ridgeLen = Math.max(0, (width - depth) / 2);
 
-    // Vertices
     const vertices = new Float32Array([
-      // Base corners
-      -w, baseHeight / 2, -d, // 0: back-left
-      w, baseHeight / 2, -d,  // 1: back-right
-      w, baseHeight / 2, d,   // 2: front-right
-      -w, baseHeight / 2, d,  // 3: front-left
-      // Ridge points
-      -ridgeLen, baseHeight / 2 + h, 0, // 4: ridge-left
-      ridgeLen, baseHeight / 2 + h, 0,  // 5: ridge-right
+      -w, baseHeight / 2, -d,
+      w, baseHeight / 2, -d,
+      w, baseHeight / 2, d,
+      -w, baseHeight / 2, d,
+      -ridgeLen, baseHeight / 2 + h, 0,
+      ridgeLen, baseHeight / 2 + h, 0,
     ]);
 
     const indices = new Uint16Array([
-      // Back panel
       0, 4, 5,
       0, 5, 1,
-      // Right panel
       1, 5, 2,
-      // Front panel
       2, 5, 4,
       2, 4, 3,
-      // Left panel
       3, 4, 0,
     ]);
 
@@ -221,7 +301,6 @@ function HipRoof({
   );
 }
 
-// Shed Roof Component (single sloped panel)
 function ShedRoof({
   width,
   depth,
@@ -247,10 +326,10 @@ function ShedRoof({
     const h = roofHeight;
 
     const vertices = new Float32Array([
-      -w, baseHeight / 2, -d,         // 0: back-left-low
-      w, baseHeight / 2, -d,          // 1: back-right-low
-      w, baseHeight / 2 + h, d,       // 2: front-right-high
-      -w, baseHeight / 2 + h, d,      // 3: front-left-high
+      -w, baseHeight / 2, -d,
+      w, baseHeight / 2, -d,
+      w, baseHeight / 2 + h, d,
+      -w, baseHeight / 2 + h, d,
     ]);
 
     const indices = new Uint16Array([0, 1, 2, 0, 2, 3]);

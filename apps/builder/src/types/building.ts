@@ -15,7 +15,7 @@ export type RoofStyle = 'flat' | 'gable' | 'hip' | 'shed' | 'gambrel' | 'mansard
 
 export type MaterialType = 'paper' | 'foamcore' | 'plywood' | 'chipboard';
 
-export type JointMethod = 'glue-tab' | 'butt' | 'slot-tab';
+export type JointMethod = 'glue-tab' | 'butt' | 'slot-tab' | 'miter';
 
 export interface MaterialConfig {
   type: MaterialType;
@@ -73,7 +73,7 @@ export const MATERIAL_PROPERTIES: Record<MaterialType, MaterialProperties> = {
       { label: '5mm', value: 0.197 },
       { label: '10mm', value: 0.394 },
     ],
-    jointMethods: ['butt'],
+    jointMethods: ['butt', 'miter'],
     defaultJointMethod: 'butt',
     defaultThickness: 0.197,
     exportTip: 'Print facade sheets on paper and glue onto foamcore panels. Cut foamcore panels to the structural dimensions shown.',
@@ -96,15 +96,16 @@ export const MATERIAL_PROPERTIES: Record<MaterialType, MaterialProperties> = {
       { label: '3/16"', value: 0.1875 },
       { label: '1/4"', value: 0.25 },
     ],
-    jointMethods: ['butt', 'slot-tab'],
+    jointMethods: ['butt', 'slot-tab', 'miter'],
     defaultJointMethod: 'slot-tab',
     defaultThickness: 0.125,
-    exportTip: 'Use the structural panel outlines as cutting templates for wood. Facade sheets can be printed on paper and glued on.',
+    exportTip: 'Use the structural panel outlines as cutting templates for wood. Facade sheets can be printed on paper and glued on. DXF export is available for laser cutters.',
     assemblySteps: [
       'Transfer or print panel outlines onto plywood/MDF as cutting guides',
       'Cut panels using scroll saw, laser cutter, or CNC',
       'If using slot-and-tab joints: insert tabs into matching slots and glue',
       'If using butt joints: glue panels edge-to-face at corners',
+      'If using mitered joints: cut 45° bevels on mating edges and glue',
       'Print facade sheets on paper and glue onto structural panels',
       'Attach roof panels',
     ],
@@ -121,7 +122,7 @@ export const MATERIAL_PROPERTIES: Record<MaterialType, MaterialProperties> = {
       { label: '1mm', value: 0.04 },
       { label: '1/16"', value: 0.0625 },
     ],
-    jointMethods: ['butt'],
+    jointMethods: ['butt', 'miter'],
     defaultJointMethod: 'butt',
     defaultThickness: 0.04,
     exportTip: 'For thin chipboard (< 1mm), score fold lines deeply with a craft knife. For thicker matboard, cut separate panels and butt-join them.',

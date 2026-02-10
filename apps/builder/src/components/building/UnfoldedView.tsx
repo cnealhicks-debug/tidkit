@@ -99,8 +99,11 @@ export function UnfoldedView({ buildingName = 'Building' }: UnfoldedViewProps) {
         </span>
       </div>
 
+      {/* Edge Legend */}
+      <EdgeLegend materialType={pattern.materialType || 'paper'} />
+
       {/* Assembly instructions (dynamic from material) */}
-      <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+      <div className="mt-4 p-4 bg-blue-50 rounded-lg">
         <h3 className="font-semibold text-blue-900 mb-2">Assembly Instructions</h3>
         <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
           {(pattern.assemblySteps || MATERIAL_PROPERTIES.paper.assemblySteps).map((step, i) => (
@@ -109,14 +112,33 @@ export function UnfoldedView({ buildingName = 'Building' }: UnfoldedViewProps) {
         </ol>
       </div>
 
-      {/* Scale reference */}
+      {/* Scale & Material reference */}
       <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-        <h3 className="font-semibold text-gray-700 mb-2">Scale Information</h3>
+        <h3 className="font-semibold text-gray-700 mb-2">Build Details</h3>
         <div className="text-sm text-gray-600 space-y-1">
           <p><strong>Scale:</strong> {params.scale.name} (1:{params.scale.ratio})</p>
           <p><strong>Real-world size:</strong> {params.dimensions.width}' W × {params.dimensions.depth}' D × {params.dimensions.height}' H</p>
           <p><strong>Model size:</strong> {(params.dimensions.width * 12 / params.scale.ratio).toFixed(2)}" × {(params.dimensions.depth * 12 / params.scale.ratio).toFixed(2)}" × {(params.dimensions.height * 12 / params.scale.ratio).toFixed(2)}"</p>
-          <p><strong>Material:</strong> {MATERIAL_PROPERTIES[pattern.materialType || 'paper'].label}</p>
+          <p>
+            <strong>Material:</strong> {MATERIAL_PROPERTIES[pattern.materialType || 'paper'].label}
+            {params.material && params.material.type !== 'paper' && (
+              <>
+                {' '}({MATERIAL_PROPERTIES[params.material.type].thicknessOptions.find(
+                  o => Math.abs(o.value - params.material!.thickness) < 0.001
+                )?.label || `${params.material.thickness}"`})
+              </>
+            )}
+          </p>
+          {params.material && params.material.type !== 'paper' && (
+            <p>
+              <strong>Joint:</strong> {
+                params.material.jointMethod === 'butt' ? 'Butt joint' :
+                params.material.jointMethod === 'slot-tab' ? 'Slot & tab' :
+                params.material.jointMethod === 'miter' ? 'Mitered (45°)' :
+                'Glue tab'
+              }
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -138,6 +160,50 @@ function downloadSVG(pattern: UnfoldedPattern) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Edge Legend — shows edge type colors and meanings, adapts to material
+ */
+function EdgeLegend({ materialType }: { materialType: string }) {
+  const isPaper = materialType === 'paper';
+  const isChipboard = materialType === 'chipboard';
+  const isSeparatePanel = !isPaper && !isChipboard;
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-gray-600">
+      <span className="font-semibold text-gray-700">Edge Legend:</span>
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block w-6 h-0 border-t-2 border-black" />
+        Cut
+      </span>
+      {isPaper && (
+        <>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-6 h-0 border-t-2 border-dashed border-red-500" />
+            Mountain fold
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-6 h-0 border-t-2 border-dashed border-blue-500" />
+            Valley fold
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-4 h-3 bg-gray-200 border border-gray-400 rounded-sm" style={{ fontSize: 0 }} />
+            Glue tab
+          </span>
+        </>
+      )}
+      {isChipboard && (
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-6 h-0 border-t-2 border-dotted border-orange-500" />
+          Score line
+        </span>
+      )}
+      {isSeparatePanel && (
+        <span className="text-gray-400 italic">All edges are cut lines (separate panels)</span>
+      )}
+    </div>
+  );
 }
 
 /**

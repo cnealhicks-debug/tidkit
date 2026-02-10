@@ -8,6 +8,7 @@
 import { useState, useMemo } from 'react';
 import { useBuildingStore } from '@/stores/buildingStore';
 import { unfoldBuilding, patternToSVG, UnfoldedPattern } from '@/lib/unfold';
+import { patternToDXF } from '@/lib/dxf-export';
 import { MATERIAL_PROPERTIES, DEFAULT_MATERIAL } from '@/types/building';
 
 interface ExportPanelProps {
@@ -28,7 +29,7 @@ const PAPER_SIZES = {
 type PaperSize = keyof typeof PAPER_SIZES;
 
 // Export format options
-type ExportFormat = 'svg' | 'pdf' | 'png';
+type ExportFormat = 'svg' | 'pdf' | 'png' | 'dxf';
 
 // Control panel width in pixels (w-80 = 20rem = 320px)
 const CONTROL_PANEL_WIDTH = 320;
@@ -77,6 +78,8 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
         }
       } else if (exportFormat === 'png') {
         await downloadPNG(pattern, dpi);
+      } else if (exportFormat === 'dxf') {
+        downloadDXF(pattern);
       }
     } finally {
       setIsExporting(false);
@@ -158,8 +161,8 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
             Export Format
           </label>
-          <div className="grid grid-cols-3 gap-2">
-            {(['svg', 'pdf', 'png'] as ExportFormat[]).map((format) => (
+          <div className="grid grid-cols-4 gap-2">
+            {(['svg', 'pdf', 'png', 'dxf'] as ExportFormat[]).map((format) => (
               <button
                 key={format}
                 onClick={() => setExportFormat(format)}
@@ -228,6 +231,21 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
                 </label>
               </div>
             )}
+          </div>
+        )}
+
+        {/* DXF Info */}
+        {exportFormat === 'dxf' && (
+          <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+            <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-3">
+              <p className="text-xs text-purple-800 dark:text-purple-300 font-medium mb-1">
+                DXF Export (Laser / CNC)
+              </p>
+              <p className="text-xs text-purple-600 dark:text-purple-400">
+                Generates an AutoCAD R12 DXF file with separate layers for cut lines, fold/score lines, and openings.
+                Compatible with LightBurn, LaserGRBL, Easel, and all major CAD software. Dimensions in inches.
+              </p>
+            </div>
           </div>
         )}
 
@@ -328,6 +346,23 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
       </div>
     </div>
   );
+}
+
+/**
+ * Download pattern as DXF file (for laser cutters / CNC)
+ */
+function downloadDXF(pattern: UnfoldedPattern) {
+  const dxfContent = patternToDXF(pattern);
+  const blob = new Blob([dxfContent], { type: 'application/dxf' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${pattern.buildingName.toLowerCase().replace(/\s+/g, '-')}-pattern.dxf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 /**
