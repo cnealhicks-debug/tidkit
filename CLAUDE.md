@@ -43,3 +43,10 @@ pnpm turbo build --filter=@tidkit/builder  # Build specific app
 ## Deployment
 - Vercel (3 projects: tidkit, tidkit-builder, tidkit-studio)
 - Domain: tidkit.com with rewrites to subapps
+
+## Specialized Agents
+Use these for focused work:
+- `.claude/agents/builder-dev.md` - Builder app (3D, controls, export)
+- `.claude/agents/studio-dev.md` - Studio app (textures, image processing)
+- `.claude/agents/ui-dev.md` - Shared UI package (components, hooks, theming)
+- `.claude/agents/full-stack.md` - Cross-cutting features and architecture
