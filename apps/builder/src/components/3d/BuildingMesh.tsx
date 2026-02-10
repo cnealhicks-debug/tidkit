@@ -11,7 +11,7 @@ import { useThree } from '@react-three/fiber';
 import { Edges } from '@react-three/drei';
 import * as THREE from 'three';
 import { useBuildingStore } from '@/stores/buildingStore';
-import { DEFAULT_MATERIAL, type MaterialType } from '@/types/building';
+import { DEFAULT_MATERIAL, ACCESSORY_PRESETS, type MaterialType, type Opening, type FloorConfig, type Accessory } from '@/types/building';
 
 // Material colors for 3D preview
 const MATERIAL_COLORS: Record<MaterialType, { wall: string; edge: string }> = {
@@ -25,6 +25,7 @@ export function BuildingMesh() {
   const groupRef = useRef<THREE.Group>(null);
   const params = useBuildingStore((s) => s.params);
   const showWireframe = useBuildingStore((s) => s.showWireframe);
+  const accessories = useBuildingStore((s) => s.accessories);
   const invalidate = useThree((s) => s.invalidate);
 
   const { width, depth, height } = params.dimensions;
@@ -32,10 +33,10 @@ export function BuildingMesh() {
   const material = params.material || DEFAULT_MATERIAL;
   const colors = MATERIAL_COLORS[material.type];
 
-  // Force R3F to re-render when material properties change
+  // Force R3F to re-render when building properties change
   useEffect(() => {
     invalidate();
-  }, [material.type, material.thickness, material.jointMethod, colors.wall, invalidate]);
+  }, [material.type, material.thickness, material.jointMethod, colors.wall, params.openings, accessories, invalidate]);
 
   // Calculate roof height based on pitch
   const roofHeight = useMemo(() => {
@@ -123,7 +124,137 @@ export function BuildingMesh() {
           showWireframe={showWireframe}
         />
       )}
+
+      {/* Windows and doors */}
+      {params.openings.map((opening) => (
+        <WallOpening
+          key={opening.id}
+          opening={opening}
+          buildingWidth={width}
+          buildingDepth={depth}
+          buildingHeight={height}
+          floors={params.floors}
+        />
+      ))}
+
+      {/* Accessories */}
+      {accessories.map((accessory) => (
+        <AccessoryMesh
+          key={accessory.id}
+          accessory={accessory}
+          buildingHeight={height}
+        />
+      ))}
     </group>
+  );
+}
+
+// =============================================================================
+// Openings — renders windows and doors on wall surfaces
+// =============================================================================
+
+function WallOpening({
+  opening,
+  buildingWidth,
+  buildingDepth,
+  buildingHeight,
+  floors,
+}: {
+  opening: Opening;
+  buildingWidth: number;
+  buildingDepth: number;
+  buildingHeight: number;
+  floors: FloorConfig[];
+}) {
+  // Calculate absolute Y from floor base
+  const floorBaseY = floors
+    .slice(0, opening.floor)
+    .reduce((sum, f) => sum + f.height, 0);
+  const centerY = -buildingHeight / 2 + floorBaseY + opening.y + opening.height / 2;
+  const isWindow = opening.type === 'window';
+  const color = isWindow ? '#87CEEB' : '#6B4226';
+  const offset = 0.05;
+
+  let position: [number, number, number] = [0, centerY, 0];
+  let size: [number, number, number] = [opening.width, opening.height, 0.08];
+
+  switch (opening.wall) {
+    case 'front': {
+      const cx = -buildingWidth / 2 + opening.x + opening.width / 2;
+      position = [cx, centerY, buildingDepth / 2 + offset];
+      size = [opening.width, opening.height, 0.08];
+      break;
+    }
+    case 'back': {
+      const cx = -buildingWidth / 2 + opening.x + opening.width / 2;
+      position = [cx, centerY, -buildingDepth / 2 - offset];
+      size = [opening.width, opening.height, 0.08];
+      break;
+    }
+    case 'left': {
+      const cz = -buildingDepth / 2 + opening.x + opening.width / 2;
+      position = [-buildingWidth / 2 - offset, centerY, cz];
+      size = [0.08, opening.height, opening.width];
+      break;
+    }
+    case 'right': {
+      const cz = -buildingDepth / 2 + opening.x + opening.width / 2;
+      position = [buildingWidth / 2 + offset, centerY, cz];
+      size = [0.08, opening.height, opening.width];
+      break;
+    }
+  }
+
+  return (
+    <mesh position={position}>
+      <boxGeometry args={size} />
+      <meshStandardMaterial
+        color={color}
+        transparent={isWindow}
+        opacity={isWindow ? 0.5 : 0.9}
+      />
+      <Edges color="#333333" />
+    </mesh>
+  );
+}
+
+// =============================================================================
+// Accessories — renders accessory objects around the building
+// =============================================================================
+
+const ACCESSORY_COLORS: Record<string, string> = {
+  exterior: '#808080',
+  structural: '#606060',
+  decorative: '#8B5A2B',
+  signage: '#DAA520',
+};
+
+function AccessoryMesh({
+  accessory,
+  buildingHeight,
+}: {
+  accessory: Accessory;
+  buildingHeight: number;
+}) {
+  const preset = ACCESSORY_PRESETS.find((p) => p.type === accessory.type);
+  if (!preset) return null;
+
+  const { width: w, height: h, depth: d } = preset.dimensions;
+  const color = ACCESSORY_COLORS[accessory.category] || '#808080';
+  // Accessory position is from building origin (ground level)
+  // Group origin is at building center height, so adjust Y
+  const posY = -buildingHeight / 2 + accessory.position.y + h / 2;
+
+  return (
+    <mesh
+      position={[accessory.position.x, posY, accessory.position.z]}
+      rotation={[0, (accessory.rotation * Math.PI) / 180, 0]}
+      scale={accessory.scale}
+    >
+      <boxGeometry args={[w, h, d]} />
+      <meshStandardMaterial color={color} />
+      <Edges color="#333333" />
+    </mesh>
   );
 }
 
