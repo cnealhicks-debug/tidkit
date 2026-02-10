@@ -10,7 +10,10 @@ import { Navigation, LoginModal, TextureLibrary, saveTextureToLibrary, getTextur
 import { useTextureStore } from '@/stores/textureStore';
 import { TextureUploader } from '@/components/TextureUploader';
 import { TextureEditor } from '@/components/TextureEditor';
-import type { TextureFile } from '@/types/texture';
+import { ScaleDetectionResult } from '@/components/ScaleDetectionResult';
+import { detectScaleFromReference } from '@/lib/scale-detection';
+import type { TextureFile, ScaleDetectionResult as DetectionResultType } from '@/types/texture';
+import type { ModelScale } from '@tidkit/config';
 import {
   useAuthStore,
   configureAuth,
@@ -42,6 +45,11 @@ export default function StudioPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Scale detection state
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [detectionResult, setDetectionResult] = useState<DetectionResultType | null>(null);
+  const [pendingTexture, setPendingTexture] = useState<TextureFile | null>(null);
+
   const { user, setUser, logout } = useAuthStore();
 
   // Handle OAuth login
@@ -69,14 +77,14 @@ export default function StudioPage() {
   }, [currentTexture]);
 
   /**
-   * Handle file upload - creates a new texture
+   * Handle file upload - creates a new texture and runs scale detection
    */
   const handleUpload = useCallback(
     (file: File) => {
       const url = URL.createObjectURL(file);
 
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
         const texture: TextureFile = {
           id: `upload-${Date.now()}`,
           name: file.name,
@@ -94,9 +102,36 @@ export default function StudioPage() {
             isSeamless: false,
           },
         };
+        setError(null);
+
+        // Run scale detection on the uploaded image
+        setIsDetecting(true);
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            const imageData = ctx.getImageData(0, 0, img.width, img.height);
+            const result = await detectScaleFromReference(imageData);
+
+            if (result.detected && result.confidence > 0.5) {
+              // Card detected — show results for user to confirm
+              setPendingTexture(texture);
+              setDetectionResult(result);
+              setIsDetecting(false);
+              return;
+            }
+          }
+        } catch {
+          // Detection failed silently — proceed to editor
+        }
+
+        // No card detected — go straight to editor
+        setIsDetecting(false);
         setCurrentTexture(texture);
         setShowImportModal(false);
-        setError(null);
       };
       img.onerror = () => {
         setError('Failed to load image');
@@ -105,6 +140,45 @@ export default function StudioPage() {
     },
     [setCurrentTexture]
   );
+
+  /**
+   * Handle confirming detected scale settings
+   */
+  const handleDetectionConfirm = useCallback(
+    (scale: ModelScale, dpi: number) => {
+      if (!pendingTexture) return;
+      const realWidth = pendingTexture.metadata.pixelWidth / dpi;
+      const realHeight = pendingTexture.metadata.pixelHeight / dpi;
+      const texture: TextureFile = {
+        ...pendingTexture,
+        metadata: {
+          ...pendingTexture.metadata,
+          scale,
+          dpi,
+          realWidth,
+          realHeight,
+        },
+      };
+      useTextureStore.getState().setRealDimensions(realWidth, realHeight);
+      setCurrentTexture(texture);
+      setShowImportModal(false);
+      setDetectionResult(null);
+      setPendingTexture(null);
+    },
+    [pendingTexture, setCurrentTexture]
+  );
+
+  /**
+   * Handle skipping detection and adjusting manually
+   */
+  const handleDetectionSkip = useCallback(() => {
+    if (pendingTexture) {
+      setCurrentTexture(pendingTexture);
+    }
+    setShowImportModal(false);
+    setDetectionResult(null);
+    setPendingTexture(null);
+  }, [pendingTexture, setCurrentTexture]);
 
   /**
    * Handle selecting texture from library - opens in editor
@@ -257,12 +331,19 @@ export default function StudioPage() {
       {/* Import Modal */}
       {showImportModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Import Texture</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {detectionResult ? 'Scale Detected' : 'Import Texture'}
+              </h2>
               <button
-                onClick={() => setShowImportModal(false)}
+                onClick={() => {
+                  setShowImportModal(false);
+                  setDetectionResult(null);
+                  setPendingTexture(null);
+                  setIsDetecting(false);
+                }}
                 className="p-1 text-gray-400 hover:text-gray-600 rounded"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -271,21 +352,83 @@ export default function StudioPage() {
               </button>
             </div>
 
-            {/* Upload Area */}
-            <div className="p-6">
-              <TextureUploader onUpload={handleUpload} />
-
-              {/* Tips */}
-              <div className="mt-4 bg-blue-50 rounded-lg p-4">
-                <h4 className="text-sm font-medium text-blue-900 mb-2">Tips for best results:</h4>
-                <ul className="text-xs text-blue-700 space-y-1">
-                  <li>• Use high-resolution photos for detailed textures</li>
-                  <li>• Photograph textures straight-on to minimize distortion</li>
-                  <li>• Include a ruler or known object for accurate scaling</li>
-                  <li>• Consistent lighting produces better seamless tiles</li>
-                </ul>
+            {/* Detection Results */}
+            {detectionResult ? (
+              <ScaleDetectionResult
+                result={detectionResult}
+                onConfirm={handleDetectionConfirm}
+                onAdjustManually={handleDetectionSkip}
+              />
+            ) : isDetecting ? (
+              /* Detecting spinner */
+              <div className="p-12 text-center">
+                <div className="w-12 h-12 mx-auto mb-4 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
+                <p className="text-sm font-medium text-gray-900">Analyzing image...</p>
+                <p className="text-xs text-gray-500 mt-1">Looking for reference card</p>
               </div>
-            </div>
+            ) : (
+              /* Upload Area + Reference Card Instructions */
+              <div className="p-6 space-y-4">
+                <TextureUploader onUpload={handleUpload} />
+
+                {/* Reference Card Section */}
+                <div className="bg-teal-50 rounded-lg p-4 border border-teal-100">
+                  <h4 className="text-sm font-semibold text-teal-900 mb-3 flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    For True-to-Scale Results
+                  </h4>
+
+                  {/* 3-step guide */}
+                  <div className="space-y-2 mb-3">
+                    <div className="flex items-start gap-2.5">
+                      <span className="flex-shrink-0 w-5 h-5 bg-teal-600 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                      <p className="text-xs text-teal-800">
+                        <span className="font-medium">Print</span> the TidKit reference card at 100% scale (no fit-to-page)
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-2.5">
+                      <span className="flex-shrink-0 w-5 h-5 bg-teal-600 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                      <p className="text-xs text-teal-800">
+                        <span className="font-medium">Place</span> the card flat against the surface you want to capture
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-2.5">
+                      <span className="flex-shrink-0 w-5 h-5 bg-teal-600 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
+                      <p className="text-xs text-teal-800">
+                        <span className="font-medium">Photograph</span> the surface with the card visible, then upload here
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <a
+                      href="/tidkit-reference-card.svg"
+                      download="tidkit-reference-card.svg"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white text-xs font-medium rounded-lg hover:bg-teal-700 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Download Reference Card
+                    </a>
+                    <span className="text-xs text-teal-600">Works with any camera</span>
+                  </div>
+                </div>
+
+                {/* Tips */}
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <h4 className="text-sm font-medium text-blue-900 mb-2">Tips for best results:</h4>
+                  <ul className="text-xs text-blue-700 space-y-1">
+                    <li>• Use high-resolution photos for detailed textures</li>
+                    <li>• Photograph textures straight-on to minimize distortion</li>
+                    <li>• Keep the reference card fully visible and unobstructed</li>
+                    <li>• Consistent lighting produces better seamless tiles</li>
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
