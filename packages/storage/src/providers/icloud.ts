@@ -201,7 +201,7 @@ export class ICloudProvider implements StorageProvider {
         'Content-Type': options.mimeType || 'application/octet-stream',
         'X-Apple-CloudKit-Request-SignatureV2': uploadInfo.signature,
       },
-      body: fileBuffer,
+      body: new Uint8Array(fileBuffer) as unknown as BodyInit,
     });
 
     if (!uploadResponse.ok) {

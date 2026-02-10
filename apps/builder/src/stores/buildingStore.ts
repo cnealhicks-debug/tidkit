@@ -120,6 +120,9 @@ interface BuildingState {
   toggleDimensions: () => void;
   setPreviewMode: (mode: '3d' | 'unfolded') => void;
 
+  // Actions - Projects
+  loadProject: (params: BuildingParams, textures: ExtendedTextureAssignment, accessories: Accessory[]) => void;
+
   // Actions - Reset
   resetToDefaults: () => void;
 
@@ -408,6 +411,10 @@ export const useBuildingStore = create<BuildingState>((set, get) => ({
     set((state) => ({ showDimensions: !state.showDimensions })),
 
   setPreviewMode: (mode) => set({ previewMode: mode }),
+
+  // Project loading
+  loadProject: (params, textures, accessories) =>
+    set({ params, textures, accessories }),
 
   // Reset
   resetToDefaults: () =>

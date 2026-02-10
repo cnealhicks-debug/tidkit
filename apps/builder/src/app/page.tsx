@@ -12,7 +12,9 @@ import { OpeningsPanel } from '@/components/building/OpeningsPanel';
 import { FloorsPanel } from '@/components/building/FloorsPanel';
 import { ExportPanel } from '@/components/building/ExportPanel';
 import { AccessoriesPanel } from '@/components/building/AccessoriesPanel';
+import { ProjectsModal } from '@/components/building/ProjectsModal';
 import { useBuildingStore } from '@/stores/buildingStore';
+import { saveProject as saveProjectToStorage } from '@/lib/projects';
 import {
   useAuthStore,
   configureAuth,
@@ -49,6 +51,9 @@ function BuilderContent() {
   const [viewMode, setViewMode] = useState<ViewMode>('3d');
   const [buildingName, setBuildingName] = useState('My Building');
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showProjects, setShowProjects] = useState(false);
+  const [currentProjectId, setCurrentProjectId] = useState<string | undefined>();
+  const [saveFlash, setSaveFlash] = useState(false);
   // Use single active panel state to prevent overlap
   const [activePanel, setActivePanel] = useState<PanelType>(null);
   const [showLogin, setShowLogin] = useState(false);
@@ -76,6 +81,14 @@ function BuilderContent() {
     setUser(newUser);
   };
 
+  // Save current project
+  const handleSave = useCallback(() => {
+    const project = saveProjectToStorage(buildingName, params, textures, accessories, currentProjectId);
+    setCurrentProjectId(project.id);
+    setSaveFlash(true);
+    setTimeout(() => setSaveFlash(false), 1500);
+  }, [buildingName, params, textures, accessories, currentProjectId]);
+
   // Count applied textures
   const textureCount = Object.values(textures).filter(Boolean).length;
 
@@ -100,7 +113,7 @@ function BuilderContent() {
 
       {/* Builder-specific toolbar */}
       <div className="h-12 bg-gray-50 border-b border-gray-200 flex items-center justify-between px-4">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
           <input
             type="text"
             value={buildingName}
@@ -108,6 +121,28 @@ function BuilderContent() {
             className="px-3 py-1.5 text-sm border rounded-lg w-48 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             placeholder="Building name"
           />
+          <button
+            onClick={handleSave}
+            className={`px-3 py-1.5 text-sm rounded-lg flex items-center gap-1.5 transition-colors ${
+              saveFlash
+                ? 'bg-green-100 text-green-700 border border-green-300'
+                : 'bg-white border border-gray-200 hover:bg-gray-50'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            {saveFlash ? 'Saved' : 'Save'}
+          </button>
+          <button
+            onClick={() => setShowProjects(true)}
+            className="px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1.5"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            Projects
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -295,6 +330,16 @@ function BuilderContent() {
       <AccessoriesPanel
         isOpen={activePanel === 'accessories'}
         onClose={() => setActivePanel(null)}
+      />
+
+      {/* Projects Modal */}
+      <ProjectsModal
+        isOpen={showProjects}
+        onClose={() => setShowProjects(false)}
+        onLoad={(name) => {
+          setBuildingName(name);
+          setCurrentProjectId(undefined); // loaded project gets a fresh save ID on next save
+        }}
       />
 
       {/* Templates Modal */}

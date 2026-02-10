@@ -82,7 +82,7 @@ export class LocalProvider implements StorageProvider {
       return {
         id: blob.pathname,
         name: blob.pathname.split('/').pop() || 'untitled',
-        mimeType: blob.contentType || 'application/octet-stream',
+        mimeType: (blob as any).contentType || 'application/octet-stream',
         size: blob.size,
         url: blob.url,
         createdAt: blob.uploadedAt,
@@ -108,7 +108,7 @@ export class LocalProvider implements StorageProvider {
       files: result.blobs.map((blob) => ({
         id: blob.pathname,
         name: blob.pathname.split('/').pop() || 'untitled',
-        mimeType: blob.contentType || 'application/octet-stream',
+        mimeType: (blob as any).contentType || 'application/octet-stream',
         size: blob.size,
         url: blob.url,
         createdAt: blob.uploadedAt,

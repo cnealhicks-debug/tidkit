@@ -219,7 +219,7 @@ function WallOpening({
 }
 
 // =============================================================================
-// Accessories — renders accessory objects around the building
+// Accessories — type-specific 3D geometry for each accessory kind
 // =============================================================================
 
 const ACCESSORY_COLORS: Record<string, string> = {
@@ -239,22 +239,269 @@ function AccessoryMesh({
   const preset = ACCESSORY_PRESETS.find((p) => p.type === accessory.type);
   if (!preset) return null;
 
-  const { width: w, height: h, depth: d } = preset.dimensions;
+  const dims = preset.dimensions;
   const color = ACCESSORY_COLORS[accessory.category] || '#808080';
-  // Accessory position is from building origin (ground level)
-  // Group origin is at building center height, so adjust Y
-  const posY = -buildingHeight / 2 + accessory.position.y + h / 2;
+  const posY = -buildingHeight / 2 + accessory.position.y;
+  const rotRad = (accessory.rotation * Math.PI) / 180;
 
   return (
-    <mesh
+    <group
       position={[accessory.position.x, posY, accessory.position.z]}
-      rotation={[0, (accessory.rotation * Math.PI) / 180, 0]}
+      rotation={[0, rotRad, 0]}
       scale={accessory.scale}
     >
-      <boxGeometry args={[w, h, d]} />
-      <meshStandardMaterial color={color} />
+      <AccessoryGeometry type={accessory.type} dims={dims} color={color} />
+    </group>
+  );
+}
+
+function AccessoryGeometry({
+  type,
+  dims,
+  color,
+}: {
+  type: string;
+  dims: { width: number; height: number; depth: number };
+  color: string;
+}) {
+  const { width: w, height: h, depth: d } = dims;
+
+  switch (type) {
+    case 'chimney':
+      return <ChimneyMesh w={w} h={h} d={d} />;
+    case 'steps':
+      return <StepsMesh w={w} h={h} d={d} />;
+    case 'column':
+      return <ColumnMesh w={w} h={h} />;
+    case 'awning':
+    case 'sign-awning':
+      return <AwningMesh w={w} h={h} d={d} color={type === 'sign-awning' ? '#2E7D32' : '#8B4513'} />;
+    case 'fence':
+    case 'gate':
+      return <FenceMesh w={w} h={h} d={d} isGate={type === 'gate'} />;
+    case 'shutters':
+      return <ShuttersMesh w={w} h={h} />;
+    case 'sign-hanging':
+      return <HangingSignMesh w={w} h={h} d={d} />;
+    default:
+      // Generic box for all other types
+      return (
+        <mesh position={[0, h / 2, 0]}>
+          <boxGeometry args={[w, h, d]} />
+          <meshStandardMaterial color={color} />
+          <Edges color="#333333" />
+        </mesh>
+      );
+  }
+}
+
+/** Brick chimney: main stack + wider cap */
+function ChimneyMesh({ w, h, d }: { w: number; h: number; d: number }) {
+  const capH = 0.4;
+  return (
+    <group>
+      {/* Main stack */}
+      <mesh position={[0, h / 2, 0]}>
+        <boxGeometry args={[w, h - capH, d]} />
+        <meshStandardMaterial color="#8B4513" />
+        <Edges color="#5C2D0E" />
+      </mesh>
+      {/* Cap */}
+      <mesh position={[0, h - capH / 2, 0]}>
+        <boxGeometry args={[w + 0.4, capH, d + 0.4]} />
+        <meshStandardMaterial color="#6B3410" />
+        <Edges color="#4A2208" />
+      </mesh>
+    </group>
+  );
+}
+
+/** Porch steps: N stacked treads */
+function StepsMesh({ w, h, d }: { w: number; h: number; d: number }) {
+  const stepCount = Math.max(2, Math.round(h / 0.7));
+  const stepH = h / stepCount;
+  const stepD = d / stepCount;
+
+  return (
+    <group>
+      {Array.from({ length: stepCount }, (_, i) => (
+        <mesh key={i} position={[0, stepH * (i + 0.5), -stepD * i / 2]}>
+          <boxGeometry args={[w, stepH * 0.9, stepD * (stepCount - i) / stepCount + stepD * 0.5]} />
+          <meshStandardMaterial color="#A0A0A0" />
+          <Edges color="#666666" />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/** Column: cylinder with base and capital */
+function ColumnMesh({ w, h }: { w: number; h: number }) {
+  const radius = w / 2;
+  const baseH = h * 0.06;
+  const capitalH = h * 0.08;
+  const shaftH = h - baseH - capitalH;
+
+  return (
+    <group>
+      {/* Base */}
+      <mesh position={[0, baseH / 2, 0]}>
+        <cylinderGeometry args={[radius * 1.4, radius * 1.5, baseH, 12]} />
+        <meshStandardMaterial color="#D0D0D0" />
+      </mesh>
+      {/* Shaft */}
+      <mesh position={[0, baseH + shaftH / 2, 0]}>
+        <cylinderGeometry args={[radius, radius, shaftH, 12]} />
+        <meshStandardMaterial color="#E8E8E8" />
+      </mesh>
+      {/* Capital */}
+      <mesh position={[0, baseH + shaftH + capitalH / 2, 0]}>
+        <cylinderGeometry args={[radius * 1.5, radius * 1.3, capitalH, 12]} />
+        <meshStandardMaterial color="#D0D0D0" />
+      </mesh>
+    </group>
+  );
+}
+
+/** Awning: sloped canopy using a wedge-like shape */
+function AwningMesh({ w, h, d, color }: { w: number; h: number; d: number; color: string }) {
+  const geo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    // Wedge: thick at back (wall side), tapers to thin at front
+    const verts = new Float32Array([
+      // Back face (against wall)
+      -w / 2, h, 0,
+      w / 2, h, 0,
+      w / 2, 0, 0,
+      -w / 2, 0, 0,
+      // Front edge (thin)
+      -w / 2, h * 0.7, -d,
+      w / 2, h * 0.7, -d,
+      w / 2, h * 0.6, -d,
+      -w / 2, h * 0.6, -d,
+    ]);
+    const indices = new Uint16Array([
+      // Top slope
+      0, 1, 5, 0, 5, 4,
+      // Bottom
+      3, 6, 2, 3, 7, 6,
+      // Front
+      4, 5, 6, 4, 6, 7,
+      // Left
+      0, 4, 7, 0, 7, 3,
+      // Right
+      1, 2, 6, 1, 6, 5,
+      // Back
+      0, 3, 2, 0, 2, 1,
+    ]);
+    g.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    g.setIndex(new THREE.BufferAttribute(indices, 1));
+    g.computeVertexNormals();
+    return g;
+  }, [w, h, d]);
+
+  return (
+    <mesh geometry={geo}>
+      <meshStandardMaterial color={color} side={THREE.DoubleSide} />
       <Edges color="#333333" />
     </mesh>
+  );
+}
+
+/** Fence with pickets and horizontal rails */
+function FenceMesh({ w, h, d, isGate }: { w: number; h: number; d: number; isGate: boolean }) {
+  const picketCount = Math.max(3, Math.round(w / 0.5));
+  const picketW = 0.15;
+  const gap = (w - picketCount * picketW) / (picketCount - 1);
+  const railH = 0.12;
+  const picketColor = '#C4A46C';
+  const postColor = '#8B6914';
+
+  return (
+    <group>
+      {/* Posts at each end */}
+      <mesh position={[-w / 2, h / 2, 0]}>
+        <boxGeometry args={[0.25, h + 0.5, 0.25]} />
+        <meshStandardMaterial color={postColor} />
+      </mesh>
+      <mesh position={[w / 2, h / 2, 0]}>
+        <boxGeometry args={[0.25, h + 0.5, 0.25]} />
+        <meshStandardMaterial color={postColor} />
+      </mesh>
+      {/* Top rail */}
+      <mesh position={[0, h * 0.85, 0]}>
+        <boxGeometry args={[w, railH, d * 0.6]} />
+        <meshStandardMaterial color={picketColor} />
+      </mesh>
+      {/* Bottom rail */}
+      <mesh position={[0, h * 0.25, 0]}>
+        <boxGeometry args={[w, railH, d * 0.6]} />
+        <meshStandardMaterial color={picketColor} />
+      </mesh>
+      {/* Pickets */}
+      {!isGate && Array.from({ length: picketCount }, (_, i) => {
+        const x = -w / 2 + picketW / 2 + i * (picketW + gap);
+        return (
+          <mesh key={i} position={[x, h / 2, 0]}>
+            <boxGeometry args={[picketW, h * 0.9, d * 0.4]} />
+            <meshStandardMaterial color={picketColor} />
+          </mesh>
+        );
+      })}
+      {/* Gate: diagonal brace instead of pickets */}
+      {isGate && (
+        <mesh position={[0, h / 2, 0]} rotation={[0, 0, Math.atan2(h, w)]}>
+          <boxGeometry args={[Math.sqrt(w * w + h * h) * 0.8, 0.1, d * 0.4]} />
+          <meshStandardMaterial color={postColor} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+/** Window shutters: pair of thin louvered panels */
+function ShuttersMesh({ w, h }: { w: number; h: number }) {
+  const panelW = w;
+  const spacing = w * 4; // shutters flank a window
+  return (
+    <group>
+      {/* Left shutter */}
+      <mesh position={[-spacing / 2, h / 2, 0]}>
+        <boxGeometry args={[panelW, h, 0.1]} />
+        <meshStandardMaterial color="#2E5930" />
+        <Edges color="#1B3D1D" />
+      </mesh>
+      {/* Right shutter */}
+      <mesh position={[spacing / 2, h / 2, 0]}>
+        <boxGeometry args={[panelW, h, 0.1]} />
+        <meshStandardMaterial color="#2E5930" />
+        <Edges color="#1B3D1D" />
+      </mesh>
+    </group>
+  );
+}
+
+/** Hanging sign: board + bracket arm */
+function HangingSignMesh({ w, h, d }: { w: number; h: number; d: number }) {
+  return (
+    <group>
+      {/* Bracket arm (horizontal) */}
+      <mesh position={[0, h + 0.3, 0]}>
+        <boxGeometry args={[0.15, 0.15, w / 2 + 0.5]} />
+        <meshStandardMaterial color="#333333" />
+      </mesh>
+      {/* Vertical bracket mount */}
+      <mesh position={[0, h / 2 + 0.3, w / 4 + 0.25]}>
+        <boxGeometry args={[0.1, h + 0.6, 0.1]} />
+        <meshStandardMaterial color="#333333" />
+      </mesh>
+      {/* Sign board */}
+      <mesh position={[0, h / 2, 0]}>
+        <boxGeometry args={[d, h, w]} />
+        <meshStandardMaterial color="#DAA520" />
+        <Edges color="#8B6914" />
+      </mesh>
+    </group>
   );
 }
 

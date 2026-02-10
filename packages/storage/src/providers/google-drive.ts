@@ -206,7 +206,7 @@ export class GoogleDriveProvider implements StorageProvider {
     // Prepare file content
     let fileContent: Blob;
     if (file instanceof Buffer) {
-      fileContent = new Blob([file]);
+      fileContent = new Blob([new Uint8Array(file)]);
     } else if (file instanceof Blob) {
       fileContent = file;
     } else {
@@ -218,7 +218,7 @@ export class GoogleDriveProvider implements StorageProvider {
         if (done) break;
         chunks.push(value);
       }
-      fileContent = new Blob(chunks);
+      fileContent = new Blob(chunks as unknown as BlobPart[]);
     }
 
     // Create metadata
