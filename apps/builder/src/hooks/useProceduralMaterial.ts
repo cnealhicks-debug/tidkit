@@ -164,7 +164,18 @@ export function useProceduralMaterial(config: ProceduralTextureConfig | null): T
 
   // Create or rebuild material when texture type changes
   const material = useMemo(() => {
-    if (!config) return null;
+    // Dispose the previous material before creating a new one
+    const prev = materialRef.current;
+    if (prev) {
+      // Defer disposal to next microtask so R3F can detach it first
+      queueMicrotask(() => prev.dispose());
+    }
+
+    if (!config) {
+      materialRef.current = null;
+      prevTypeRef.current = null;
+      return null;
+    }
 
     const vertexShader = buildVertexShader();
     const fragmentShader = buildFragmentShader(config.type);
@@ -189,10 +200,13 @@ export function useProceduralMaterial(config: ProceduralTextureConfig | null): T
     }
   }, [config]);
 
-  // Cleanup
+  // Cleanup on unmount only
   useEffect(() => {
     return () => {
-      materialRef.current?.dispose();
+      if (materialRef.current) {
+        materialRef.current.dispose();
+        materialRef.current = null;
+      }
     };
   }, []);
 

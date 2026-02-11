@@ -51,6 +51,7 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
   const [dpi, setDpi] = useState(300);
   const [isExporting, setIsExporting] = useState(false);
   const [bakingStatus, setBakingStatus] = useState<string | null>(null);
+  const [bakeError, setBakeError] = useState<string | null>(null);
 
   // Check if any surfaces have procedural textures
   const hasProceduralTextures = useMemo(() => {
@@ -123,13 +124,28 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
   const tilesY = Math.ceil(pattern.height / printableHeight);
   const totalTiles = tilesX * tilesY;
 
+  /** Safely bake procedural textures, returning undefined on failure */
+  const safeBake = (): BakedTextureMap | undefined => {
+    if (!hasProceduralTextures) return undefined;
+    try {
+      setBakeError(null);
+      return bakeTextures();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to bake procedural textures';
+      setBakeError(msg);
+      setBakingStatus(null);
+      console.error('Procedural texture baking failed:', err);
+      // Continue export without baked textures (panels will be blank)
+      return undefined;
+    }
+  };
+
   // Handle export (bakes procedural textures if needed before export)
   const handleExport = async () => {
     setIsExporting(true);
 
     try {
-      // Bake procedural textures if any exist
-      const bakedTextures = hasProceduralTextures ? bakeTextures() : undefined;
+      const bakedTextures = safeBake();
 
       if (exportFormat === 'svg') {
         downloadSVG(pattern, dpi, bakedTextures);
@@ -154,7 +170,7 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
     setIsExporting(true);
 
     try {
-      const bakedTextures = hasProceduralTextures ? bakeTextures() : undefined;
+      const bakedTextures = safeBake();
 
       // Export SVG
       downloadSVG(pattern, dpi, bakedTextures);
@@ -387,11 +403,17 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
         {/* Procedural texture baking notice */}
         {hasProceduralTextures && (
           <div className="px-4 pb-2">
-            <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-3">
-              <p className="text-xs text-purple-700 dark:text-purple-300">
-                <strong>Note:</strong> Procedural textures will be baked to raster images for export.
-                {bakingStatus && <span className="block mt-1 text-purple-500">{bakingStatus}</span>}
-              </p>
+            <div className={`${bakeError ? 'bg-red-50 dark:bg-red-900/30' : 'bg-purple-50 dark:bg-purple-900/30'} rounded-lg p-3`}>
+              {bakeError ? (
+                <p className="text-xs text-red-700 dark:text-red-300">
+                  <strong>Baking failed:</strong> {bakeError}. Export will proceed without procedural textures.
+                </p>
+              ) : (
+                <p className="text-xs text-purple-700 dark:text-purple-300">
+                  <strong>Note:</strong> Procedural textures will be baked to raster images for export.
+                  {bakingStatus && <span className="block mt-1 text-purple-500">{bakingStatus}</span>}
+                </p>
+              )}
             </div>
           </div>
         )}

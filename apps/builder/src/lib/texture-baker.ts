@@ -145,8 +145,17 @@ function createBakeMaterial(
   // UV (0,0)-(1,1) maps to surface dimensions in inches
   const vertexShader = /* glsl */ `
     varying vec2 vUV;
+    varying vec3 vWorldPosition;
+    varying vec3 vWorldNormal;
+    uniform float uSurfaceWidth;
+    uniform float uSurfaceHeight;
+    uniform float uWorldYOffset;
+
     void main() {
       vUV = uv;
+      // Simulate world position from UV (for weathering and pattern evaluation)
+      vWorldPosition = vec3(uv.x * uSurfaceWidth / 12.0, uWorldYOffset + uv.y * uSurfaceHeight / 12.0, 0.0);
+      vWorldNormal = vec3(0.0, 0.0, 1.0); // Flat plane facing camera
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `;
