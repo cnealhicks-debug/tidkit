@@ -16,7 +16,7 @@ export interface NavLink {
 }
 
 export interface NavigationProps {
-  currentApp?: 'home' | 'builder' | 'studio' | 'library';
+  currentApp?: 'home' | 'builder' | 'studio' | 'collection';
   user?: {
     name: string;
     email: string;
@@ -34,7 +34,7 @@ const DEV_URLS: Record<string, string> = {
   '/': 'http://localhost:3000',
   '/builder': 'http://localhost:3001',
   '/studio': 'http://localhost:3002',
-  '/library': 'http://localhost:3000/library',
+  '/collection': 'http://localhost:3000/collection',
 };
 
 // Production URLs - all apps under one domain
@@ -42,7 +42,7 @@ const PROD_URLS: Record<string, string> = {
   '/': '/',
   '/builder': '/builder',
   '/studio': '/studio',
-  '/library': '/library',
+  '/collection': '/collection',
 };
 
 export function Navigation({
@@ -70,14 +70,14 @@ export function Navigation({
     home: '/',
     builder: '/builder',
     studio: '/studio',
-    library: '/library',
+    collection: '/collection',
   };
 
   const APP_LINKS = [
     { href: '/', label: 'Home' },
     { href: '/builder', label: 'Builder' },
     { href: '/studio', label: 'Studio', badge: 'Beta' },
-    { href: '/library', label: 'Library' },
+    { href: '/collection', label: 'Collection' },
   ];
 
   return (

@@ -20,3 +20,4 @@ export { UserMenu, type UserMenuProps } from './UserMenu';
 export { ThemeProvider, type ThemeProviderProps } from './ThemeProvider';
 export { ThemeToggle, type ThemeToggleProps } from './ThemeToggle';
 export { SidePanel, type SidePanelProps } from './SidePanel';
+export * from './collection';
