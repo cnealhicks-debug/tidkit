@@ -5,11 +5,14 @@
  * Enhanced export options with batch export and tiled PDF patterns
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import * as THREE from 'three';
 import { useBuildingStore } from '@/stores/buildingStore';
-import { unfoldBuilding, patternToSVG, UnfoldedPattern } from '@/lib/unfold';
+import { unfoldBuilding, patternToSVG, UnfoldedPattern, type BakedTextureMap } from '@/lib/unfold';
 import { patternToDXF } from '@/lib/dxf-export';
 import { MATERIAL_PROPERTIES, DEFAULT_MATERIAL } from '@/types/building';
+import { isProceduralTexture } from '@/types/procedural';
+import { bakeProceduralTexture, type BakeResult } from '@/lib/texture-baker';
 
 interface ExportPanelProps {
   isOpen: boolean;
@@ -36,7 +39,7 @@ const CONTROL_PANEL_WIDTH = 320;
 const PANEL_GAP = 8;
 
 export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps) {
-  const { params, accessories } = useBuildingStore();
+  const { params, accessories, textures } = useBuildingStore();
 
   const [exportFormat, setExportFormat] = useState<ExportFormat>('svg');
   const [paperSize, setPaperSize] = useState<PaperSize>('letter');
@@ -47,6 +50,52 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
   const [tiledExport, setTiledExport] = useState(false);
   const [dpi, setDpi] = useState(300);
   const [isExporting, setIsExporting] = useState(false);
+  const [bakingStatus, setBakingStatus] = useState<string | null>(null);
+
+  // Check if any surfaces have procedural textures
+  const hasProceduralTextures = useMemo(() => {
+    return Object.values(textures).some(t => isProceduralTexture(t));
+  }, [textures]);
+
+  // Bake procedural textures for export using a temporary renderer
+  const bakeTextures = useCallback((): BakedTextureMap => {
+    const bakedMap: BakedTextureMap = new Map();
+
+    const modelDims = useBuildingStore.getState().getModelDimensions();
+    const surfaceDims: Record<string, { w: number; h: number }> = {
+      frontWall: { w: modelDims.widthInches, h: modelDims.heightInches },
+      backWall: { w: modelDims.widthInches, h: modelDims.heightInches },
+      sideWalls: { w: modelDims.depthInches, h: modelDims.heightInches },
+      roof: { w: modelDims.widthInches, h: modelDims.depthInches },
+      foundation: { w: modelDims.widthInches, h: modelDims.depthInches },
+    };
+
+    // Create a temporary offscreen renderer for baking
+    const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
+    renderer.setSize(1, 1); // Will be resized by bake function via render targets
+
+    try {
+      for (const [surface, texture] of Object.entries(textures)) {
+        if (!isProceduralTexture(texture)) continue;
+        const dims = surfaceDims[surface];
+        if (!dims) continue;
+
+        setBakingStatus(`Baking ${surface}...`);
+        const result = bakeProceduralTexture(renderer, texture, {
+          widthInches: dims.w,
+          heightInches: dims.h,
+          dpi,
+          normalAxis: surface === 'sideWalls' ? 1 : surface === 'roof' || surface === 'foundation' ? 2 : 0,
+        });
+        bakedMap.set(surface, result.dataUrl);
+      }
+    } finally {
+      renderer.dispose();
+    }
+
+    setBakingStatus(null);
+    return bakedMap;
+  }, [textures, dpi]);
 
   // Generate full pattern (including accessory panels)
   const fullPattern = useMemo(() => {
@@ -74,21 +123,24 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
   const tilesY = Math.ceil(pattern.height / printableHeight);
   const totalTiles = tilesX * tilesY;
 
-  // Handle export
+  // Handle export (bakes procedural textures if needed before export)
   const handleExport = async () => {
     setIsExporting(true);
 
     try {
+      // Bake procedural textures if any exist
+      const bakedTextures = hasProceduralTextures ? bakeTextures() : undefined;
+
       if (exportFormat === 'svg') {
-        downloadSVG(pattern, dpi);
+        downloadSVG(pattern, dpi, bakedTextures);
       } else if (exportFormat === 'pdf') {
         if (tiledExport && needsTiling) {
           downloadTiledPDF(pattern, paperSize, margins, dpi, includeInstructions);
         } else {
-          downloadPDF(pattern, paperSize, margins, dpi, includeInstructions);
+          downloadPDF(pattern, paperSize, margins, dpi, includeInstructions, bakedTextures);
         }
       } else if (exportFormat === 'png') {
-        await downloadPNG(pattern, dpi);
+        await downloadPNG(pattern, dpi, bakedTextures);
       } else if (exportFormat === 'dxf') {
         downloadDXF(pattern);
       }
@@ -102,8 +154,10 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
     setIsExporting(true);
 
     try {
+      const bakedTextures = hasProceduralTextures ? bakeTextures() : undefined;
+
       // Export SVG
-      downloadSVG(pattern, dpi);
+      downloadSVG(pattern, dpi, bakedTextures);
 
       // Small delay between downloads
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -112,14 +166,14 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
       if (needsTiling && tiledExport) {
         downloadTiledPDF(pattern, paperSize, margins, dpi, includeInstructions);
       } else {
-        downloadPDF(pattern, paperSize, margins, dpi, includeInstructions);
+        downloadPDF(pattern, paperSize, margins, dpi, includeInstructions, bakedTextures);
       }
 
       // Small delay
       await new Promise(resolve => setTimeout(resolve, 500));
 
       // Export PNG
-      await downloadPNG(pattern, dpi);
+      await downloadPNG(pattern, dpi, bakedTextures);
     } finally {
       setIsExporting(false);
     }
@@ -159,6 +213,11 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
               {pattern.panels.length} panels
               {pattern.glueTabs.length > 0 && ` • ${pattern.glueTabs.length} glue tabs`}
               {pattern.facadePanels && pattern.facadePanels.length > 0 && ` • ${pattern.facadePanels.length} facade sheets`}
+              {(() => {
+                const allPanels = [...pattern.panels, ...(pattern.facadePanels || [])];
+                const stickerCount = allPanels.reduce((sum, p) => sum + (p.stickers?.length || 0), 0);
+                return stickerCount > 0 ? ` • ${stickerCount} stickers` : '';
+              })()}
             </p>
             <p className="text-xs text-blue-500 dark:text-blue-400 mt-0.5">
               {MATERIAL_PROPERTIES[pattern.materialType || 'paper'].icon}{' '}
@@ -325,6 +384,18 @@ export function ExportPanel({ isOpen, onClose, buildingName }: ExportPanelProps)
           </div>
         </div>
 
+        {/* Procedural texture baking notice */}
+        {hasProceduralTextures && (
+          <div className="px-4 pb-2">
+            <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-3">
+              <p className="text-xs text-purple-700 dark:text-purple-300">
+                <strong>Note:</strong> Procedural textures will be baked to raster images for export.
+                {bakingStatus && <span className="block mt-1 text-purple-500">{bakingStatus}</span>}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Export Actions */}
         <div className="p-4 space-y-2">
           <button
@@ -392,8 +463,8 @@ function downloadDXF(pattern: UnfoldedPattern) {
 /**
  * Download pattern as SVG file
  */
-function downloadSVG(pattern: UnfoldedPattern, dpi: number) {
-  const svgContent = patternToSVG(pattern, dpi);
+function downloadSVG(pattern: UnfoldedPattern, dpi: number, bakedTextures?: BakedTextureMap) {
+  const svgContent = patternToSVG(pattern, dpi, bakedTextures);
   const blob = new Blob([svgContent], { type: 'image/svg+xml' });
   const url = URL.createObjectURL(blob);
 
@@ -409,8 +480,8 @@ function downloadSVG(pattern: UnfoldedPattern, dpi: number) {
 /**
  * Download pattern as PNG using canvas
  */
-async function downloadPNG(pattern: UnfoldedPattern, dpi: number): Promise<void> {
-  const svgContent = patternToSVG(pattern, dpi);
+async function downloadPNG(pattern: UnfoldedPattern, dpi: number, bakedTextures?: BakedTextureMap): Promise<void> {
+  const svgContent = patternToSVG(pattern, dpi, bakedTextures);
 
   // Create an image from SVG
   const img = new Image();
@@ -471,9 +542,10 @@ function downloadPDF(
   paperSize: PaperSize,
   margins: number,
   dpi: number,
-  includeInstructions: boolean
+  includeInstructions: boolean,
+  bakedTextures?: BakedTextureMap,
 ) {
-  const svgContent = patternToSVG(pattern, dpi);
+  const svgContent = patternToSVG(pattern, dpi, bakedTextures);
   const paper = PAPER_SIZES[paperSize];
   const printWindow = window.open('', '_blank');
 
@@ -792,6 +864,18 @@ function generatePatternContent(pattern: UnfoldedPattern): string {
         const openingY = panel.position.y + (panelHeight - opening.y - opening.height);
         const openingClass = opening.type === 'door' ? 'opening-door' : 'opening-window';
         content += `<rect x="${openingX.toFixed(4)}" y="${openingY.toFixed(4)}" width="${opening.width.toFixed(4)}" height="${opening.height.toFixed(4)}" class="${openingClass}" />\n`;
+      }
+    }
+
+    // Draw stickers (2D graphics printed on this panel)
+    if (panel.stickers && panel.stickers.length > 0) {
+      const panelHeight = Math.max(...panel.vertices.map(v => v.y));
+      for (const sticker of panel.stickers) {
+        const sx = panel.position.x + sticker.x;
+        const sy = panel.position.y + (panelHeight - sticker.y - sticker.height);
+        content += `<g transform="translate(${sx.toFixed(4)}, ${sy.toFixed(4)})">\n`;
+        content += `  ${sticker.svgContent}\n`;
+        content += `</g>\n`;
       }
     }
 

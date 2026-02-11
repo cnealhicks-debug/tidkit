@@ -7,7 +7,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getTextureImageUrl, getTexture, Texture } from '@/lib/api';
-import { useBuildingStore, type LibraryTexture } from '@/stores/buildingStore';
+import { useBuildingStore, type LibraryTexture, type TextureValue } from '@/stores/buildingStore';
+import { isProceduralTexture } from '@/types/procedural';
 
 interface LoadedTexture {
   texture: THREE.Texture;
@@ -16,22 +17,26 @@ interface LoadedTexture {
 }
 
 /**
- * Hook to load a texture from the TidKit API (by ID) or from a library texture object
+ * Hook to load a texture from the TidKit API (by ID) or from a library texture object.
+ * Procedural textures are skipped — they're handled by useProceduralMaterial instead.
  */
-export function useTextureLoader(textureSource: string | LibraryTexture | undefined) {
+export function useTextureLoader(textureSource: TextureValue | undefined) {
   const [loaded, setLoaded] = useState<LoadedTexture | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Skip procedural textures — they use CustomShaderMaterial, not loaded textures
+  const resolvedSource = textureSource && !isProceduralTexture(textureSource) ? textureSource : undefined;
+
   // Create a stable key for the effect dependency
-  const sourceKey = textureSource
-    ? typeof textureSource === 'string'
-      ? `api:${textureSource}`
-      : `lib:${textureSource.id}`
+  const sourceKey = resolvedSource
+    ? typeof resolvedSource === 'string'
+      ? `api:${resolvedSource}`
+      : `lib:${resolvedSource.id}`
     : null;
 
   useEffect(() => {
-    if (!textureSource) {
+    if (!resolvedSource) {
       setLoaded(null);
       return;
     }
@@ -39,23 +44,23 @@ export function useTextureLoader(textureSource: string | LibraryTexture | undefi
     let cancelled = false;
 
     async function loadTexture() {
-      if (!textureSource) return;
+      if (!resolvedSource) return;
 
       setLoading(true);
       setError(null);
 
       try {
-        const isLibraryTexture = typeof textureSource === 'object';
+        const isLibraryTexture = typeof resolvedSource === 'object';
         let imageUrl: string;
         let metadata: Texture | LibraryTexture;
 
         if (isLibraryTexture) {
           // Load from library texture object
-          imageUrl = textureSource.fullUrl;
-          metadata = textureSource;
+          imageUrl = resolvedSource.fullUrl;
+          metadata = resolvedSource;
         } else {
           // Load from API by ID
-          const textureId = parseInt(textureSource, 10);
+          const textureId = parseInt(resolvedSource, 10);
           metadata = await getTexture(textureId);
           imageUrl = getTextureImageUrl(textureId, 'full');
         }

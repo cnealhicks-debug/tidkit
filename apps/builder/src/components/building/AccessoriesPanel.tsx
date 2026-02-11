@@ -14,6 +14,7 @@ import {
   AccessoryPosition,
   AccessoryPreset,
   ACCESSORY_PRESETS,
+  AccessoryRenderMode,
 } from '@/types/building';
 
 interface AccessoriesPanelProps {
@@ -42,9 +43,27 @@ const POSITION_OPTIONS: { value: AccessoryPosition; label: string }[] = [
   { value: 'corner', label: 'Corner' },
 ];
 
+const WALL_POSITION_OPTIONS = POSITION_OPTIONS.filter(o =>
+  o.value.startsWith('wall-')
+);
+
+const COLOR_SWATCHES = [
+  '#DAA520', '#8B0000', '#2E5930', '#1E3A5F',
+  '#333333', '#8B4513', '#555555', '#FFFFFF',
+];
+
+// Types that accept a text/label property
+const TEXT_TYPES: AccessoryType[] = ['sign-flat', 'sticker-banner', 'sticker-poster'];
+// house-number uses "number" property instead
+const HAS_COLOR: AccessoryType[] = [
+  'sign-flat', 'shutters', 'flower-box', 'sticker-banner',
+  'sticker-motif', 'sticker-poster', 'sticker-vent-grill',
+];
+
 export function AccessoriesPanel({ isOpen, onClose }: AccessoriesPanelProps) {
   const { accessories, addAccessory, updateAccessory, removeAccessory, clearAccessories, params } = useBuildingStore();
 
+  const [renderModeFilter, setRenderModeFilter] = useState<AccessoryRenderMode>('2d');
   const [selectedCategory, setSelectedCategory] = useState<AccessoryCategory | 'all'>('all');
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<AccessoryPreset | null>(null);
@@ -73,10 +92,13 @@ export function AccessoriesPanel({ isOpen, onClose }: AccessoriesPanelProps) {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, showAddForm, onClose]);
 
-  // Filter presets by category
+  const is2DMode = renderModeFilter === '2d';
+
+  // Filter presets by mode and category
+  const modePresets = ACCESSORY_PRESETS.filter(p => p.renderMode === renderModeFilter);
   const filteredPresets = selectedCategory === 'all'
-    ? ACCESSORY_PRESETS
-    : ACCESSORY_PRESETS.filter(p => p.category === selectedCategory);
+    ? modePresets
+    : modePresets.filter(p => p.category === selectedCategory);
 
   // Handle preset selection
   const handlePresetSelect = (preset: AccessoryPreset) => {
@@ -108,6 +130,7 @@ export function AccessoriesPanel({ isOpen, onClose }: AccessoriesPanelProps) {
       scale: newAccessory.scale || 1,
       attachedTo: newAccessory.attachedTo,
       properties: newAccessory.properties,
+      renderMode: selectedPreset.renderMode,
     };
 
     addAccessory(accessory);
@@ -145,6 +168,37 @@ export function AccessoriesPanel({ isOpen, onClose }: AccessoriesPanelProps) {
       </div>
 
       <div className="overflow-y-auto max-h-[calc(100vh-14rem)]">
+        {/* Mode Toggle */}
+        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+          <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
+            <button
+              onClick={() => { setRenderModeFilter('2d'); setSelectedCategory('all'); }}
+              className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+                renderModeFilter === '2d'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
+              }`}
+            >
+              Stickers
+            </button>
+            <button
+              onClick={() => { setRenderModeFilter('3d'); setSelectedCategory('all'); }}
+              className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+                renderModeFilter === '3d'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
+              }`}
+            >
+              3D Parts
+            </button>
+          </div>
+          <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5">
+            {is2DMode
+              ? 'Flat graphics printed directly on walls'
+              : 'Separate pieces to cut and assemble'}
+          </p>
+        </div>
+
         {/* Category Filter */}
         <div className="p-4 border-b border-gray-100 dark:border-gray-700">
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
@@ -218,7 +272,7 @@ export function AccessoriesPanel({ isOpen, onClose }: AccessoriesPanelProps) {
             </div>
 
             <div className="space-y-3">
-              {/* Position */}
+              {/* Attached To */}
               <div>
                 <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Attached To</label>
                 <select
@@ -226,14 +280,14 @@ export function AccessoriesPanel({ isOpen, onClose }: AccessoriesPanelProps) {
                   onChange={(e) => setNewAccessory({ ...newAccessory, attachedTo: e.target.value as AccessoryPosition })}
                   className="w-full px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 >
-                  {POSITION_OPTIONS.map((opt) => (
+                  {(is2DMode ? WALL_POSITION_OPTIONS : POSITION_OPTIONS).map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
               </div>
 
-              {/* Position coordinates */}
-              <div className="grid grid-cols-3 gap-2">
+              {/* Position coordinates — 2D stickers: X/Y only; 3D parts: X/Y/Z */}
+              <div className={`grid gap-2 ${is2DMode ? 'grid-cols-2' : 'grid-cols-3'}`}>
                 <div>
                   <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">X (ft)</label>
                   <input
@@ -264,38 +318,42 @@ export function AccessoriesPanel({ isOpen, onClose }: AccessoriesPanelProps) {
                     className="w-full px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Z (ft)</label>
-                  <input
-                    type="number"
-                    value={newAccessory.position?.z || 0}
-                    onChange={(e) => setNewAccessory({
-                      ...newAccessory,
-                      position: { ...newAccessory.position!, z: parseFloat(e.target.value) || 0 }
-                    })}
-                    min={0}
-                    max={depth}
-                    step={0.5}
-                    className="w-full px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700"
-                  />
-                </div>
+                {!is2DMode && (
+                  <div>
+                    <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Z (ft)</label>
+                    <input
+                      type="number"
+                      value={newAccessory.position?.z || 0}
+                      onChange={(e) => setNewAccessory({
+                        ...newAccessory,
+                        position: { ...newAccessory.position!, z: parseFloat(e.target.value) || 0 }
+                      })}
+                      min={0}
+                      max={depth}
+                      step={0.5}
+                      className="w-full px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700"
+                    />
+                  </div>
+                )}
               </div>
 
-              {/* Rotation & Scale */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Rotation</label>
-                  <select
-                    value={newAccessory.rotation || 0}
-                    onChange={(e) => setNewAccessory({ ...newAccessory, rotation: parseInt(e.target.value) })}
-                    className="w-full px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700"
-                  >
-                    <option value={0}>0°</option>
-                    <option value={90}>90°</option>
-                    <option value={180}>180°</option>
-                    <option value={270}>270°</option>
-                  </select>
-                </div>
+              {/* Rotation (3D only) & Scale */}
+              <div className={`grid gap-2 ${is2DMode ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                {!is2DMode && (
+                  <div>
+                    <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Rotation</label>
+                    <select
+                      value={newAccessory.rotation || 0}
+                      onChange={(e) => setNewAccessory({ ...newAccessory, rotation: parseInt(e.target.value) })}
+                      className="w-full px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700"
+                    >
+                      <option value={0}>0°</option>
+                      <option value={90}>90°</option>
+                      <option value={180}>180°</option>
+                      <option value={270}>270°</option>
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Scale</label>
                   <select
@@ -311,6 +369,109 @@ export function AccessoriesPanel({ isOpen, onClose }: AccessoriesPanelProps) {
                   </select>
                 </div>
               </div>
+
+              {/* Sticker-specific: Text input for sign/banner/poster types */}
+              {is2DMode && TEXT_TYPES.includes(selectedPreset.type) && (
+                <div>
+                  <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Text</label>
+                  <input
+                    type="text"
+                    value={newAccessory.properties?.text || ''}
+                    onChange={(e) => setNewAccessory({
+                      ...newAccessory,
+                      properties: { ...newAccessory.properties, text: e.target.value }
+                    })}
+                    placeholder={selectedPreset.type === 'sticker-poster' ? 'WANTED' : 'SHOP'}
+                    className="w-full px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700"
+                  />
+                </div>
+              )}
+
+              {/* Sticker-specific: Number input for house-number */}
+              {is2DMode && selectedPreset.type === 'house-number' && (
+                <div>
+                  <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Number</label>
+                  <input
+                    type="text"
+                    value={newAccessory.properties?.number || ''}
+                    onChange={(e) => setNewAccessory({
+                      ...newAccessory,
+                      properties: { ...newAccessory.properties, number: e.target.value }
+                    })}
+                    placeholder="123"
+                    maxLength={6}
+                    className="w-full px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700"
+                  />
+                </div>
+              )}
+
+              {/* Sticker-specific: Style selector for house-number */}
+              {is2DMode && selectedPreset.type === 'house-number' && (
+                <div>
+                  <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Style</label>
+                  <select
+                    value={newAccessory.properties?.style || 'modern'}
+                    onChange={(e) => setNewAccessory({
+                      ...newAccessory,
+                      properties: { ...newAccessory.properties, style: e.target.value }
+                    })}
+                    className="w-full px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700"
+                  >
+                    <option value="modern">Modern</option>
+                    <option value="classic">Classic</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Sticker-specific: Shape selector for motif */}
+              {is2DMode && selectedPreset.type === 'sticker-motif' && (
+                <div>
+                  <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Shape</label>
+                  <select
+                    value={newAccessory.properties?.shape || 'diamond'}
+                    onChange={(e) => setNewAccessory({
+                      ...newAccessory,
+                      properties: { ...newAccessory.properties, shape: e.target.value }
+                    })}
+                    className="w-full px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700"
+                  >
+                    <option value="diamond">Diamond</option>
+                    <option value="star">Star</option>
+                    <option value="cross">Cross</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Sticker-specific: Color picker */}
+              {is2DMode && HAS_COLOR.includes(selectedPreset.type) && (
+                <div>
+                  <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Color</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {COLOR_SWATCHES.map((color) => {
+                      const propKey = ['sign-flat', 'sticker-banner', 'sticker-poster'].includes(selectedPreset.type)
+                        ? 'bgColor' : 'color';
+                      const currentColor = newAccessory.properties?.[propKey];
+                      const isSelected = currentColor === color;
+                      return (
+                        <button
+                          key={color}
+                          onClick={() => setNewAccessory({
+                            ...newAccessory,
+                            properties: { ...newAccessory.properties, [propKey]: color }
+                          })}
+                          className={`w-6 h-6 rounded border-2 transition-all ${
+                            isSelected
+                              ? 'border-blue-500 scale-110'
+                              : 'border-gray-300 dark:border-gray-500 hover:border-gray-400'
+                          }`}
+                          style={{ backgroundColor: color }}
+                          title={color}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Custom name */}
               <div>
@@ -359,6 +520,13 @@ export function AccessoriesPanel({ isOpen, onClose }: AccessoriesPanelProps) {
                       <span className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
                         <span>{preset?.icon || '📦'}</span>
                         {accessory.name}
+                        <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${
+                          accessory.renderMode === '2d'
+                            ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300'
+                            : 'bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-300'
+                        }`}>
+                          {accessory.renderMode === '2d' ? '2D' : '3D'}
+                        </span>
                       </span>
                       <button
                         onClick={() => removeAccessory(accessory.id)}
@@ -398,7 +566,10 @@ export function AccessoriesPanel({ isOpen, onClose }: AccessoriesPanelProps) {
         <div className="p-4 border-t border-gray-100 dark:border-gray-700">
           <div className="bg-amber-50 dark:bg-amber-900/30 rounded-lg p-3">
             <p className="text-xs text-amber-700 dark:text-amber-300">
-              <strong>Tip:</strong> Accessories appear in the 3D preview and are included in exported patterns as separate pieces to cut and assemble.
+              <strong>Tip:</strong>{' '}
+              {is2DMode
+                ? 'Stickers print directly on wall panels — no cutting or assembly required.'
+                : 'Accessories appear in the 3D preview and are included in exported patterns as separate pieces to cut and assemble.'}
             </p>
           </div>
         </div>

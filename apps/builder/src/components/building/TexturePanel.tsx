@@ -8,6 +8,8 @@
 import { useState, useEffect } from 'react';
 import { TextureLibrary, type LibraryTexture } from '@tidkit/ui';
 import { useBuildingStore, type BuildingSurface, type LibraryTexture as StoreLibraryTexture } from '@/stores/buildingStore';
+import { isProceduralTexture } from '@/types/procedural';
+import { ProceduralTexturePanel } from './ProceduralTexturePanel';
 
 // UI face selector types (maps to store's BuildingSurface)
 type UIFace = 'walls' | 'frontWall' | 'backWall' | 'sideWalls' | 'roof';
@@ -33,6 +35,7 @@ export function TexturePanel({ isOpen, onClose }: TexturePanelProps) {
   const { textures, setTexture, clearTextures } = useBuildingStore();
   const [selectedFace, setSelectedFace] = useState<UIFace>('walls');
   const [showLibrary, setShowLibrary] = useState(false);
+  const [textureSource, setTextureSource] = useState<'library' | 'procedural'>('library');
 
   // Handle escape key to close
   useEffect(() => {
@@ -130,81 +133,128 @@ export function TexturePanel({ isOpen, onClose }: TexturePanelProps) {
           </div>
         </div>
 
-        {/* Current texture preview */}
-        <div className="p-4">
-          <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-            {FACES.find(f => f.key === selectedFace)?.label} Texture
-          </label>
-
-          {currentTexture ? (
-            <div className="relative bg-gray-100 rounded-lg overflow-hidden">
-              <img
-                src={currentTexture.thumbnailUrl}
-                alt={currentTexture.name}
-                className="w-full h-24 object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-2">
-                <p className="text-white text-xs font-medium truncate">{currentTexture.name}</p>
-              </div>
-              <button
-                onClick={handleClearTexture}
-                className="absolute top-2 right-2 p-1 bg-white/90 rounded-full hover:bg-white"
-                title="Remove texture"
-              >
-                <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          ) : (
-            <div className="bg-gray-100 rounded-lg h-24 flex items-center justify-center">
-              <p className="text-gray-400 text-sm">No texture</p>
-            </div>
-          )}
-
-          {/* Action buttons */}
-          <div className="mt-3 space-y-2">
+        {/* Texture source toggle */}
+        <div className="px-4 pt-3 pb-2">
+          <div className="grid grid-cols-2 gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
             <button
-              onClick={() => setShowLibrary(true)}
-              className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
+              onClick={() => setTextureSource('library')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                textureSource === 'library'
+                  ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+              }`}
             >
-              Choose from Library
+              Library
             </button>
+            <button
+              onClick={() => setTextureSource('procedural')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                textureSource === 'procedural'
+                  ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+              }`}
+            >
+              Procedural
+            </button>
+          </div>
+        </div>
 
-            {currentTexture && (
+        {textureSource === 'procedural' ? (
+          /* Procedural texture panel */
+          <div className="p-4 max-h-[60vh] overflow-y-auto">
+            <ProceduralTexturePanel
+              surface={selectedSurfaces[0] || 'frontWall'}
+              onClose={() => {
+                handleClearTexture();
+                setTextureSource('library');
+              }}
+            />
+          </div>
+        ) : (
+          <>
+            {/* Current texture preview */}
+            <div className="p-4">
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                {FACES.find(f => f.key === selectedFace)?.label} Texture
+              </label>
+
+              {currentTexture ? (
+                <div className="relative bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden">
+                  <img
+                    src={currentTexture.thumbnailUrl}
+                    alt={currentTexture.name}
+                    className="w-full h-24 object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 p-2">
+                    <p className="text-white text-xs font-medium truncate">{currentTexture.name}</p>
+                  </div>
+                  <button
+                    onClick={handleClearTexture}
+                    className="absolute top-2 right-2 p-1 bg-white/90 rounded-full hover:bg-white"
+                    title="Remove texture"
+                  >
+                    <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-gray-100 dark:bg-gray-700 rounded-lg h-24 flex items-center justify-center">
+                  {(() => {
+                    const tex = textures[selectedSurfaces[0]];
+                    if (tex && isProceduralTexture(tex)) {
+                      return <p className="text-gray-500 dark:text-gray-400 text-sm">Procedural: {tex.type}</p>;
+                    }
+                    return <p className="text-gray-400 dark:text-gray-500 text-sm">No texture</p>;
+                  })()}
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="mt-3 space-y-2">
+                <button
+                  onClick={() => setShowLibrary(true)}
+                  className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
+                >
+                  Choose from Library
+                </button>
+
+                {currentTexture && (
+                  <button
+                    onClick={handleClearTexture}
+                    className="w-full px-4 py-2 text-gray-600 dark:text-gray-400 text-sm hover:text-gray-900 dark:hover:text-gray-200"
+                  >
+                    Remove Texture
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Quick actions */}
+            <div className="px-4 pb-4">
               <button
-                onClick={handleClearTexture}
-                className="w-full px-4 py-2 text-gray-600 text-sm hover:text-gray-900"
+                onClick={clearTextures}
+                className="w-full px-4 py-2 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
               >
-                Remove Texture
+                Clear All Textures
               </button>
-            )}
-          </div>
-        </div>
+            </div>
 
-        {/* Quick actions */}
-        <div className="px-4 pb-4">
-          <button
-            onClick={clearTextures}
-            className="w-full px-4 py-2 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50"
-          >
-            Clear All Textures
-          </button>
-        </div>
-
-        {/* Tip */}
-        <div className="px-4 pb-4">
-          <div className="bg-blue-50 rounded-lg p-3">
-            <p className="text-xs text-blue-700">
-              <strong>Tip:</strong> Create custom textures in{' '}
-              <a href="http://localhost:3002" className="underline hover:text-blue-900">
-                Studio
-              </a>{' '}
-              with true-to-scale dimensions.
-            </p>
-          </div>
-        </div>
+            {/* Tip */}
+            <div className="px-4 pb-4">
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+                <p className="text-xs text-blue-700 dark:text-blue-300">
+                  <strong>Tip:</strong> Create custom textures in{' '}
+                  <a href="http://localhost:3002" className="underline hover:text-blue-900 dark:hover:text-blue-200">
+                    Studio
+                  </a>{' '}
+                  with true-to-scale dimensions.
+                </p>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Texture Library Modal */}

@@ -5,10 +5,20 @@
  *  - Cloud providers (Google Drive, iCloud) via /api/projects route
  */
 
-import type { BuildingParams, Accessory } from '@/types/building';
+import type { BuildingParams, Accessory, AccessoryType } from '@/types/building';
+import { DEFAULT_2D_TYPES } from '@/types/building';
 import type { ExtendedTextureAssignment } from '@/stores/buildingStore';
 
 const STORAGE_KEY = 'tidkit-projects';
+
+/** Migrate accessories from older saves that lack renderMode */
+function migrateAccessory(accessory: Accessory): Accessory {
+  if (accessory.renderMode) return accessory;
+  return {
+    ...accessory,
+    renderMode: DEFAULT_2D_TYPES.includes(accessory.type) ? '2d' : '3d',
+  };
+}
 
 export interface SavedProject {
   id: string;
@@ -28,7 +38,12 @@ export function listProjects(): SavedProject[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    return JSON.parse(raw) as SavedProject[];
+    const projects = JSON.parse(raw) as SavedProject[];
+    // Migrate accessories from older saves
+    for (const p of projects) {
+      p.accessories = p.accessories.map(migrateAccessory);
+    }
+    return projects;
   } catch {
     return [];
   }

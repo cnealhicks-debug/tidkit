@@ -29,6 +29,10 @@ import {
   createFloors,
   calculateTotalHeight,
 } from '@/types/building';
+import type { ProceduralTextureConfig } from '@/types/procedural';
+import { isProceduralTexture } from '@/types/procedural';
+
+export { isProceduralTexture };
 
 // Texture type from UI library (used for textures saved in local library)
 export interface LibraryTexture {
@@ -51,14 +55,16 @@ export interface LibraryTexture {
 // Surface types for the building
 export type BuildingSurface = 'frontWall' | 'sideWalls' | 'backWall' | 'roof' | 'foundation' | 'trim';
 
-// Extended texture assignment that can hold either API texture ID or library texture
+// Extended texture assignment that can hold API texture ID, library texture, or procedural config
+export type TextureValue = string | LibraryTexture | ProceduralTextureConfig;
+
 export interface ExtendedTextureAssignment {
-  frontWall?: string | LibraryTexture;
-  sideWalls?: string | LibraryTexture;
-  backWall?: string | LibraryTexture;
-  roof?: string | LibraryTexture;
-  foundation?: string | LibraryTexture;
-  trim?: string | LibraryTexture;
+  frontWall?: TextureValue;
+  sideWalls?: TextureValue;
+  backWall?: TextureValue;
+  roof?: TextureValue;
+  foundation?: TextureValue;
+  trim?: TextureValue;
 }
 
 interface BuildingState {
@@ -87,9 +93,14 @@ interface BuildingState {
   setScale: (scale: ModelScale) => void;
   setScaleByName: (name: string) => void;
 
-  // Actions - Textures (supports both API IDs and library textures)
-  setTexture: (surface: BuildingSurface, texture: string | LibraryTexture | null) => void;
+  // Actions - Textures (supports API IDs, library textures, and procedural configs)
+  setTexture: (surface: BuildingSurface, texture: TextureValue | null) => void;
   clearTextures: () => void;
+
+  // Actions - Procedural Textures
+  setProceduralTexture: (surface: BuildingSurface, config: ProceduralTextureConfig) => void;
+  updateProceduralParam: (surface: BuildingSurface, path: string, value: any) => void;
+  applyProceduralPreset: (surface: BuildingSurface, config: ProceduralTextureConfig) => void;
 
   // Actions - Openings
   addOpening: (opening: Opening) => void;
@@ -240,6 +251,33 @@ export const useBuildingStore = create<BuildingState>((set, get) => ({
     set({
       textures: {},
     }),
+
+  // Procedural texture actions
+  setProceduralTexture: (surface, config) =>
+    set((state) => ({
+      textures: { ...state.textures, [surface]: config },
+    })),
+
+  updateProceduralParam: (surface, path, value) =>
+    set((state) => {
+      const existing = state.textures[surface];
+      if (!existing || !isProceduralTexture(existing)) return state;
+      // Deep update via dot-notation path (e.g., "brick.brickColorA" or "weathering.dirtIntensity")
+      const parts = path.split('.');
+      const updated = JSON.parse(JSON.stringify(existing)) as ProceduralTextureConfig;
+      let target: any = updated;
+      for (let i = 0; i < parts.length - 1; i++) {
+        target = target[parts[i]];
+        if (!target) return state;
+      }
+      target[parts[parts.length - 1]] = value;
+      return { textures: { ...state.textures, [surface]: updated } };
+    }),
+
+  applyProceduralPreset: (surface, config) =>
+    set((state) => ({
+      textures: { ...state.textures, [surface]: JSON.parse(JSON.stringify(config)) },
+    })),
 
   // Opening actions
   addOpening: (opening) =>

@@ -17,6 +17,7 @@ import { generateOpeningTrim } from './opening-trim';
 import { generateWallDetails } from './wall-details';
 import { generateRoofTrimPanels } from './roof-trim';
 import { getWallProfile, getProfileMaxHeight } from './wall-profiles';
+import { attachStickersToPanel } from './sticker-placement';
 
 // =============================================================================
 // Strategy Interface
@@ -634,12 +635,18 @@ export class PaperUnfoldStrategy implements UnfoldStrategy {
       maxHeight = currentY + roofPanelLength + GLUE_TAB_WIDTH;
     }
 
-    // Generate accessory panels
+    // Attach 2D stickers to wall panels (paper mode — no facades)
+    if (accessories && accessories.length > 0) {
+      attachStickersToPanel(accessories, panels, undefined, params);
+    }
+
+    // Generate accessory panels (3D parts only — 2D stickers are embedded in walls)
     const maxStructuralY = Math.max(
       ...panels.map((p) => p.position.y + Math.max(...p.vertices.map((v) => v.y)))
     );
-    const accessoryPanels = accessories && accessories.length > 0
-      ? generateAccessoryPanels(accessories, params, maxStructuralY + PANEL_SPACING * 2)
+    const accessories3D = accessories?.filter(a => a.renderMode !== '2d') || [];
+    const accessoryPanels = accessories3D.length > 0
+      ? generateAccessoryPanels(accessories3D, params, maxStructuralY + PANEL_SPACING * 2)
       : undefined;
 
     // Generate detail panels (opening trim + wall details + roof trim)
@@ -1035,13 +1042,19 @@ export class SeparatePanelUnfoldStrategy implements UnfoldStrategy {
       this.applySlotTabJoints(panels, thickness);
     }
 
-    // Generate accessory panels
+    // Attach 2D stickers to wall/facade panels
+    if (accessories && accessories.length > 0) {
+      attachStickersToPanel(accessories, panels, facadePanels, params);
+    }
+
+    // Generate accessory panels (3D parts only — 2D stickers are embedded in walls/facades)
     const allStructural = [...panels, ...(facadePanels || [])];
     const maxStructuralY2 = allStructural.length > 0
       ? Math.max(...allStructural.map((p) => p.position.y + Math.max(...p.vertices.map((v) => v.y))))
       : 1;
-    const accessoryPanels = accessories && accessories.length > 0
-      ? generateAccessoryPanels(accessories, params, maxStructuralY2 + PANEL_SPACING * 2)
+    const accessories3D = accessories?.filter(a => a.renderMode !== '2d') || [];
+    const accessoryPanels = accessories3D.length > 0
+      ? generateAccessoryPanels(accessories3D, params, maxStructuralY2 + PANEL_SPACING * 2)
       : undefined;
 
     // Generate detail panels (opening trim + wall details + roof trim)

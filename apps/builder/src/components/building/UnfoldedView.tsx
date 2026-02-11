@@ -120,6 +120,11 @@ export function UnfoldedView({ buildingName = 'Building' }: UnfoldedViewProps) {
         {pattern.detailPanels && pattern.detailPanels.length > 0 && (
           <> • <strong>{pattern.detailPanels.length}</strong> detail pieces</>
         )}
+        {(() => {
+          const allPanels = [...pattern.panels, ...(pattern.facadePanels || [])];
+          const stickerCount = allPanels.reduce((sum, p) => sum + (p.stickers?.length || 0), 0);
+          return stickerCount > 0 ? <> • <strong>{stickerCount}</strong> stickers</> : null;
+        })()}
         <span className="ml-2 text-gray-400">|</span>
         <span className="ml-2">
           {MATERIAL_PROPERTIES[pattern.materialType || 'paper'].icon}{' '}

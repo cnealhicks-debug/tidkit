@@ -385,6 +385,9 @@ export function calculateTotalHeight(floors: FloorConfig[]): number {
 // Categories of architectural items
 export type AccessoryCategory = 'exterior' | 'structural' | 'decorative' | 'signage';
 
+// Render mode: 2D stickers print on wall panels, 3D parts are separate cut-out pieces
+export type AccessoryRenderMode = '2d' | '3d';
+
 // Accessory placement positions
 export type AccessoryPosition =
   | 'wall-front' | 'wall-back' | 'wall-left' | 'wall-right'
@@ -410,18 +413,22 @@ export interface Accessory {
   attachedTo?: AccessoryPosition;
   // Custom properties depending on type
   properties?: Record<string, any>;
+  // 2D stickers print on walls, 3D parts are separate pieces
+  renderMode: AccessoryRenderMode;
 }
 
 // Specific accessory types
 export type AccessoryType =
-  // Exterior
+  // Exterior (3D)
   | 'fence' | 'gate' | 'steps' | 'ramp' | 'platform'
-  // Structural
+  // Structural (3D)
   | 'chimney' | 'vent' | 'skylight' | 'dormer' | 'awning'
-  // Decorative
+  // Decorative (mixed 2D/3D)
   | 'shutters' | 'flower-box' | 'light-fixture' | 'trim' | 'column'
-  // Signage
-  | 'sign-flat' | 'sign-hanging' | 'sign-awning' | 'house-number';
+  // Signage (mostly 2D)
+  | 'sign-flat' | 'sign-hanging' | 'sign-awning' | 'house-number'
+  // 2D stickers
+  | 'sticker-banner' | 'sticker-motif' | 'sticker-poster' | 'sticker-vent-grill';
 
 // Accessory preset definitions
 export interface AccessoryPreset {
@@ -435,11 +442,15 @@ export interface AccessoryPreset {
   defaultProperties?: Record<string, any>;
   // Icon or preview
   icon: string;
+  // 2D stickers print on walls, 3D parts are separate pieces
+  renderMode: AccessoryRenderMode;
 }
 
 // Accessory presets library
 export const ACCESSORY_PRESETS: AccessoryPreset[] = [
-  // Exterior
+  // ── 3D Parts ─────────────────────────────────────────────────────────────
+
+  // Exterior (3D)
   {
     type: 'fence',
     category: 'exterior',
@@ -448,6 +459,7 @@ export const ACCESSORY_PRESETS: AccessoryPreset[] = [
     dimensions: { width: 8, height: 4, depth: 0.5 },
     defaultProperties: { style: 'picket', posts: true },
     icon: '🪻',
+    renderMode: '3d',
   },
   {
     type: 'gate',
@@ -457,6 +469,7 @@ export const ACCESSORY_PRESETS: AccessoryPreset[] = [
     dimensions: { width: 4, height: 4, depth: 0.5 },
     defaultProperties: { style: 'picket', hinged: 'left' },
     icon: '🚪',
+    renderMode: '3d',
   },
   {
     type: 'steps',
@@ -466,6 +479,7 @@ export const ACCESSORY_PRESETS: AccessoryPreset[] = [
     dimensions: { width: 5, height: 2, depth: 3 },
     defaultProperties: { stepCount: 3, railing: true },
     icon: '🪜',
+    renderMode: '3d',
   },
   {
     type: 'platform',
@@ -475,9 +489,10 @@ export const ACCESSORY_PRESETS: AccessoryPreset[] = [
     dimensions: { width: 12, height: 4, depth: 6 },
     defaultProperties: { railing: true, ramp: false },
     icon: '📦',
+    renderMode: '3d',
   },
 
-  // Structural
+  // Structural (3D)
   {
     type: 'chimney',
     category: 'structural',
@@ -486,6 +501,7 @@ export const ACCESSORY_PRESETS: AccessoryPreset[] = [
     dimensions: { width: 2, height: 6, depth: 2 },
     defaultProperties: { style: 'brick', cap: true },
     icon: '🏭',
+    renderMode: '3d',
   },
   {
     type: 'vent',
@@ -495,6 +511,7 @@ export const ACCESSORY_PRESETS: AccessoryPreset[] = [
     dimensions: { width: 1.5, height: 1, depth: 1.5 },
     defaultProperties: { style: 'box' },
     icon: '💨',
+    renderMode: '3d',
   },
   {
     type: 'skylight',
@@ -504,6 +521,7 @@ export const ACCESSORY_PRESETS: AccessoryPreset[] = [
     dimensions: { width: 3, height: 0.5, depth: 4 },
     defaultProperties: { style: 'flat', panes: 1 },
     icon: '☀️',
+    renderMode: '3d',
   },
   {
     type: 'awning',
@@ -513,35 +531,7 @@ export const ACCESSORY_PRESETS: AccessoryPreset[] = [
     dimensions: { width: 6, height: 1, depth: 3 },
     defaultProperties: { style: 'sloped', color: 'striped' },
     icon: '🏕️',
-  },
-
-  // Decorative
-  {
-    type: 'shutters',
-    category: 'decorative',
-    name: 'Window Shutters',
-    description: 'Pair of decorative shutters',
-    dimensions: { width: 1, height: 4, depth: 0.25 },
-    defaultProperties: { style: 'louvered', pair: true },
-    icon: '🪟',
-  },
-  {
-    type: 'flower-box',
-    category: 'decorative',
-    name: 'Flower Box',
-    description: 'Window-mounted planter',
-    dimensions: { width: 3, height: 0.5, depth: 0.75 },
-    defaultProperties: { flowers: true },
-    icon: '🌸',
-  },
-  {
-    type: 'light-fixture',
-    category: 'decorative',
-    name: 'Wall Light',
-    description: 'Exterior wall-mounted light',
-    dimensions: { width: 0.5, height: 1, depth: 0.5 },
-    defaultProperties: { style: 'lantern' },
-    icon: '💡',
+    renderMode: '3d',
   },
   {
     type: 'column',
@@ -551,17 +541,7 @@ export const ACCESSORY_PRESETS: AccessoryPreset[] = [
     dimensions: { width: 0.75, height: 10, depth: 0.75 },
     defaultProperties: { style: 'round', base: true, capital: true },
     icon: '🏛️',
-  },
-
-  // Signage
-  {
-    type: 'sign-flat',
-    category: 'signage',
-    name: 'Wall Sign',
-    description: 'Flat wall-mounted sign',
-    dimensions: { width: 6, height: 2, depth: 0.25 },
-    defaultProperties: { text: 'SHOP', style: 'rectangular' },
-    icon: '🪧',
+    renderMode: '3d',
   },
   {
     type: 'sign-hanging',
@@ -571,6 +551,7 @@ export const ACCESSORY_PRESETS: AccessoryPreset[] = [
     dimensions: { width: 3, height: 2, depth: 0.25 },
     defaultProperties: { text: 'OPEN', bracket: 'ornate' },
     icon: '🏪',
+    renderMode: '3d',
   },
   {
     type: 'sign-awning',
@@ -580,14 +561,110 @@ export const ACCESSORY_PRESETS: AccessoryPreset[] = [
     dimensions: { width: 12, height: 2, depth: 4 },
     defaultProperties: { text: 'STORE', color: 'green' },
     icon: '🎪',
+    renderMode: '3d',
+  },
+
+  // ── 2D Stickers ──────────────────────────────────────────────────────────
+
+  // Decorative (2D — printed on wall surface)
+  {
+    type: 'shutters',
+    category: 'decorative',
+    name: 'Window Shutters',
+    description: 'Printed louvered shutters beside a window',
+    dimensions: { width: 1, height: 4, depth: 0 },
+    defaultProperties: { style: 'louvered', color: '#2E5930' },
+    icon: '🪟',
+    renderMode: '2d',
+  },
+  {
+    type: 'flower-box',
+    category: 'decorative',
+    name: 'Flower Box',
+    description: 'Printed planter with flowers below window',
+    dimensions: { width: 3, height: 0.5, depth: 0 },
+    defaultProperties: { flowers: true, color: '#8B4513' },
+    icon: '🌸',
+    renderMode: '2d',
+  },
+  {
+    type: 'light-fixture',
+    category: 'decorative',
+    name: 'Wall Light',
+    description: 'Printed wall sconce light fixture',
+    dimensions: { width: 0.5, height: 1, depth: 0 },
+    defaultProperties: { style: 'lantern' },
+    icon: '💡',
+    renderMode: '2d',
+  },
+
+  // Signage (2D)
+  {
+    type: 'sign-flat',
+    category: 'signage',
+    name: 'Wall Sign',
+    description: 'Printed flat sign on wall surface',
+    dimensions: { width: 6, height: 2, depth: 0 },
+    defaultProperties: { text: 'SHOP', bgColor: '#DAA520', textColor: '#FFFFFF' },
+    icon: '🪧',
+    renderMode: '2d',
   },
   {
     type: 'house-number',
     category: 'signage',
     name: 'House Number',
-    description: 'Address number plaque',
-    dimensions: { width: 1, height: 0.5, depth: 0.1 },
+    description: 'Printed address number plaque',
+    dimensions: { width: 1, height: 0.5, depth: 0 },
     defaultProperties: { number: '123', style: 'modern' },
     icon: '🔢',
+    renderMode: '2d',
   },
+
+  // New sticker types (2D only)
+  {
+    type: 'sticker-banner',
+    category: 'decorative',
+    name: 'Banner',
+    description: 'Horizontal decorative stripe or banner',
+    dimensions: { width: 8, height: 1, depth: 0 },
+    defaultProperties: { text: '', bgColor: '#8B0000', textColor: '#FFFFFF' },
+    icon: '🎗️',
+    renderMode: '2d',
+  },
+  {
+    type: 'sticker-motif',
+    category: 'decorative',
+    name: 'Decorative Motif',
+    description: 'Geometric shape — star, diamond, or cross',
+    dimensions: { width: 2, height: 2, depth: 0 },
+    defaultProperties: { shape: 'diamond', color: '#DAA520' },
+    icon: '✦',
+    renderMode: '2d',
+  },
+  {
+    type: 'sticker-poster',
+    category: 'signage',
+    name: 'Poster / Notice',
+    description: 'Small posted notice or advertisement',
+    dimensions: { width: 1.5, height: 2, depth: 0 },
+    defaultProperties: { text: 'WANTED', bgColor: '#FFFFF0', textColor: '#333333' },
+    icon: '📜',
+    renderMode: '2d',
+  },
+  {
+    type: 'sticker-vent-grill',
+    category: 'structural',
+    name: 'Vent Grille',
+    description: 'Printed decorative vent grille pattern',
+    dimensions: { width: 1.5, height: 1, depth: 0 },
+    defaultProperties: { color: '#555555' },
+    icon: '▦',
+    renderMode: '2d',
+  },
+];
+
+// Types that default to 2D render mode (for backward compatibility migration)
+export const DEFAULT_2D_TYPES: AccessoryType[] = [
+  'sign-flat', 'house-number', 'light-fixture', 'shutters', 'flower-box',
+  'sticker-banner', 'sticker-motif', 'sticker-poster', 'sticker-vent-grill',
 ];

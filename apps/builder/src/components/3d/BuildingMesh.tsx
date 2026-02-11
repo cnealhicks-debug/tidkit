@@ -11,8 +11,10 @@ import { useThree } from '@react-three/fiber';
 import { Edges } from '@react-three/drei';
 import * as THREE from 'three';
 import { useBuildingStore } from '@/stores/buildingStore';
-import { DEFAULT_MATERIAL, ACCESSORY_PRESETS, type MaterialType, type Opening, type FloorConfig, type Accessory } from '@/types/building';
+import { DEFAULT_MATERIAL, ACCESSORY_PRESETS, type MaterialType, type Opening, type FloorConfig, type Accessory, type AccessoryPreset } from '@/types/building';
 import { getWallProfile } from '@/lib/wall-profiles';
+import { getStickerGraphic } from '@/lib/sticker-graphics';
+import { WallMaterial } from './WallMaterial';
 
 // Material colors for 3D preview
 const MATERIAL_COLORS: Record<MaterialType, { wall: string; edge: string }> = {
@@ -78,7 +80,7 @@ export function BuildingMesh() {
       ) : (
         <mesh position={[0, 0, 0]}>
           <boxGeometry args={[width, height, depth]} />
-          <meshStandardMaterial color={colors.wall} />
+          <WallMaterial surface="frontWall" fallbackColor={colors.wall} />
           {showWireframe && <Edges color="black" threshold={15} />}
         </mesh>
       )}
@@ -197,6 +199,8 @@ export function BuildingMesh() {
           key={accessory.id}
           accessory={accessory}
           buildingHeight={height}
+          buildingWidth={width}
+          buildingDepth={depth}
         />
       ))}
     </group>
@@ -286,13 +290,31 @@ const ACCESSORY_COLORS: Record<string, string> = {
 function AccessoryMesh({
   accessory,
   buildingHeight,
+  buildingWidth,
+  buildingDepth,
 }: {
   accessory: Accessory;
   buildingHeight: number;
+  buildingWidth: number;
+  buildingDepth: number;
 }) {
   const preset = ACCESSORY_PRESETS.find((p) => p.type === accessory.type);
   if (!preset) return null;
 
+  // 2D stickers render as flat colored planes on wall surfaces
+  if (accessory.renderMode === '2d') {
+    return (
+      <StickerMesh
+        accessory={accessory}
+        preset={preset}
+        buildingHeight={buildingHeight}
+        buildingWidth={buildingWidth}
+        buildingDepth={buildingDepth}
+      />
+    );
+  }
+
+  // 3D parts render with full geometry
   const dims = preset.dimensions;
   const color = ACCESSORY_COLORS[accessory.category] || '#808080';
   const posY = -buildingHeight / 2 + accessory.position.y;
@@ -306,6 +328,66 @@ function AccessoryMesh({
     >
       <AccessoryGeometry type={accessory.type} dims={dims} color={color} />
     </group>
+  );
+}
+
+/** Flat colored quad on a wall surface for 2D sticker accessories */
+function StickerMesh({
+  accessory,
+  preset,
+  buildingHeight,
+  buildingWidth,
+  buildingDepth,
+}: {
+  accessory: Accessory;
+  preset: AccessoryPreset;
+  buildingHeight: number;
+  buildingWidth: number;
+  buildingDepth: number;
+}) {
+  const graphic = getStickerGraphic(accessory.type);
+  const color = graphic?.previewColor || '#DAA520';
+  const w = preset.dimensions.width * accessory.scale;
+  const h = preset.dimensions.height * accessory.scale;
+  const offset = 0.06; // Slight offset from wall to prevent z-fighting
+
+  const posY = -buildingHeight / 2 + accessory.position.y + h / 2;
+
+  let position: [number, number, number] = [0, posY, 0];
+  let rotation: [number, number, number] = [0, 0, 0];
+
+  switch (accessory.attachedTo) {
+    case 'wall-front': {
+      const cx = -buildingWidth / 2 + accessory.position.x + w / 2;
+      position = [cx, posY, buildingDepth / 2 + offset];
+      break;
+    }
+    case 'wall-back': {
+      const cx = -buildingWidth / 2 + accessory.position.x + w / 2;
+      position = [cx, posY, -buildingDepth / 2 - offset];
+      rotation = [0, Math.PI, 0];
+      break;
+    }
+    case 'wall-left': {
+      const cz = -buildingDepth / 2 + accessory.position.x + w / 2;
+      position = [-buildingWidth / 2 - offset, posY, cz];
+      rotation = [0, -Math.PI / 2, 0];
+      break;
+    }
+    case 'wall-right': {
+      const cz = -buildingDepth / 2 + accessory.position.x + w / 2;
+      position = [buildingWidth / 2 + offset, posY, cz];
+      rotation = [0, Math.PI / 2, 0];
+      break;
+    }
+  }
+
+  return (
+    <mesh position={position} rotation={rotation}>
+      <planeGeometry args={[w, h]} />
+      <meshStandardMaterial color={color} side={THREE.DoubleSide} />
+      <Edges color="#333333" />
+    </mesh>
   );
 }
 
@@ -592,28 +674,28 @@ function ThickWalls({
       {/* Front wall */}
       <mesh position={[0, 0, depth / 2 - thickness / 2]}>
         <boxGeometry args={[width, height, thickness]} />
-        <meshStandardMaterial color={wallColor} />
+        <WallMaterial surface="frontWall" fallbackColor={wallColor} />
         {showWireframe && <Edges color="black" />}
       </mesh>
 
       {/* Back wall */}
       <mesh position={[0, 0, -depth / 2 + thickness / 2]}>
         <boxGeometry args={[width, height, thickness]} />
-        <meshStandardMaterial color={wallColor} />
+        <WallMaterial surface="backWall" fallbackColor={wallColor} />
         {showWireframe && <Edges color="black" />}
       </mesh>
 
       {/* Left wall (between front and back for butt joints) */}
       <mesh position={[-width / 2 + thickness / 2, 0, 0]}>
         <boxGeometry args={[thickness, height, sideDepth]} />
-        <meshStandardMaterial color={edgeColor} />
+        <WallMaterial surface="sideWalls" fallbackColor={edgeColor} />
         {showWireframe && <Edges color="black" />}
       </mesh>
 
       {/* Right wall */}
       <mesh position={[width / 2 - thickness / 2, 0, 0]}>
         <boxGeometry args={[thickness, height, sideDepth]} />
-        <meshStandardMaterial color={edgeColor} />
+        <WallMaterial surface="sideWalls" fallbackColor={edgeColor} />
         {showWireframe && <Edges color="black" />}
       </mesh>
     </group>

@@ -24,6 +24,19 @@ export interface PanelOpening {
   label?: string;
 }
 
+// 2D sticker graphic embedded in a panel
+export interface PanelSticker {
+  id: string;
+  /** Position relative to panel bottom-left, in model inches */
+  x: number;
+  y: number;
+  /** Dimensions in model inches */
+  width: number;
+  height: number;
+  /** Inline SVG element string (no outer wrapper) */
+  svgContent: string;
+}
+
 export interface Panel {
   id: string;
   name: string;
@@ -45,6 +58,8 @@ export interface Panel {
   panelGroup?: 'structural' | 'facade' | 'accessory' | 'detail';
   // Link back to source accessory (for accessory panels)
   parentAccessoryId?: string;
+  // 2D sticker graphics printed on this panel
+  stickers?: PanelSticker[];
 }
 
 export interface GlueTab {
@@ -94,10 +109,14 @@ export function unfoldBuilding(
   return strategy.unfold(params, name, accessories);
 }
 
+/** Map of panel names to baked texture data URLs (from procedural texture baking) */
+export type BakedTextureMap = Map<string, string>;
+
 /**
- * Convert pattern to SVG string
+ * Convert pattern to SVG string.
+ * @param bakedTextures Optional map of panel name prefix → baked PNG data URL
  */
-export function patternToSVG(pattern: UnfoldedPattern, dpi: number = 300): string {
+export function patternToSVG(pattern: UnfoldedPattern, dpi: number = 300, bakedTextures?: BakedTextureMap): string {
   const pxPerInch = dpi;
   const width = pattern.width * pxPerInch;
   const height = pattern.height * pxPerInch;
@@ -145,13 +164,13 @@ export function patternToSVG(pattern: UnfoldedPattern, dpi: number = 300): strin
   }
 
   // Draw structural panels
-  svg += renderPanels(pattern.panels, 'panel');
+  svg += renderPanels(pattern.panels, 'panel', bakedTextures);
 
   // Draw facade panels if present
   if (hasFacades) {
     const facadeMinY = Math.min(...pattern.facadePanels!.map(p => p.position.y));
     svg += `  <text x="0.5" y="${(facadeMinY - 0.2).toFixed(4)}" class="section-title">Facade Sheets (print on paper, glue onto structural panels)</text>\n`;
-    svg += renderPanels(pattern.facadePanels!, 'facade-panel');
+    svg += renderPanels(pattern.facadePanels!, 'facade-panel', bakedTextures);
   }
 
   // Draw accessory panels if present
@@ -196,7 +215,7 @@ export function patternToSVG(pattern: UnfoldedPattern, dpi: number = 300): strin
 /**
  * Render a set of panels to SVG content
  */
-function renderPanels(panels: Panel[], panelClass: string): string {
+function renderPanels(panels: Panel[], panelClass: string, bakedTextures?: BakedTextureMap): string {
   let svg = '';
 
   for (const panel of panels) {
@@ -204,6 +223,26 @@ function renderPanels(panels: Panel[], panelClass: string): string {
       .map(v => `${(v.x + panel.position.x).toFixed(4)},${(v.y + panel.position.y).toFixed(4)}`)
       .join(' ');
     svg += `  <polygon points="${points}" class="${panelClass}" />\n`;
+
+    // Embed baked procedural texture if available for this panel
+    if (bakedTextures) {
+      // Match panel to baked texture by surface name prefix
+      // Panel names like "Front Wall", "Back Wall", "Left Wall", "Right Wall", "Roof"
+      const surfaceKey = panelNameToSurface(panel.name);
+      const bakedDataUrl = surfaceKey ? bakedTextures.get(surfaceKey) : undefined;
+      if (bakedDataUrl) {
+        const minX = Math.min(...panel.vertices.map(v => v.x));
+        const minY = Math.min(...panel.vertices.map(v => v.y));
+        const maxX = Math.max(...panel.vertices.map(v => v.x));
+        const maxY = Math.max(...panel.vertices.map(v => v.y));
+        const w = maxX - minX;
+        const h = maxY - minY;
+        // Clip to panel polygon
+        const clipId = `clip-${panel.id}`;
+        svg += `  <defs><clipPath id="${clipId}"><polygon points="${points}" /></clipPath></defs>\n`;
+        svg += `  <image href="${bakedDataUrl}" x="${(minX + panel.position.x).toFixed(4)}" y="${(minY + panel.position.y).toFixed(4)}" width="${w.toFixed(4)}" height="${h.toFixed(4)}" clip-path="url(#${clipId})" preserveAspectRatio="none" />\n`;
+      }
+    }
 
     // Draw edges with appropriate styles
     for (const edge of panel.edges) {
@@ -236,6 +275,19 @@ function renderPanels(panels: Panel[], panelClass: string): string {
       }
     }
 
+    // Draw 2D stickers (printed graphic elements on this panel)
+    if (panel.stickers && panel.stickers.length > 0) {
+      const panelHeight = Math.max(...panel.vertices.map(v => v.y));
+      for (const sticker of panel.stickers) {
+        // Y-flip: sticker.y is from panel bottom, SVG y is from top
+        const sx = panel.position.x + sticker.x;
+        const sy = panel.position.y + (panelHeight - sticker.y - sticker.height);
+        svg += `  <g transform="translate(${sx.toFixed(4)}, ${sy.toFixed(4)})">\n`;
+        svg += `    ${sticker.svgContent}\n`;
+        svg += `  </g>\n`;
+      }
+    }
+
     // Panel label
     const centerX = panel.position.x + panel.vertices.reduce((sum, v) => sum + v.x, 0) / panel.vertices.length;
     const centerY = panel.position.y + panel.vertices.reduce((sum, v) => sum + v.y, 0) / panel.vertices.length;
@@ -243,4 +295,15 @@ function renderPanels(panels: Panel[], panelClass: string): string {
   }
 
   return svg;
+}
+
+/** Map panel display names to store surface keys for baked texture lookup */
+function panelNameToSurface(panelName: string): string | undefined {
+  const lower = panelName.toLowerCase();
+  if (lower.includes('front')) return 'frontWall';
+  if (lower.includes('back') || lower.includes('rear')) return 'backWall';
+  if (lower.includes('left') || lower.includes('right') || lower.includes('side')) return 'sideWalls';
+  if (lower.includes('roof')) return 'roof';
+  if (lower.includes('foundation') || lower.includes('floor') || lower.includes('base')) return 'foundation';
+  return undefined;
 }
