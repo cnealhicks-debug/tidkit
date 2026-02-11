@@ -7,7 +7,16 @@
   "exports": {
     ".": "./src/index.tsx",
     "./components/*": "./src/components/*.tsx",
-    "./hooks/*": "./src/hooks/*.ts"
+    "./hooks/*": "./src/hooks/*.ts",
+    "./types/procedural": "./src/types/procedural.ts",
+    "./lib/procedural-textures": "./src/lib/procedural-textures.ts",
+    "./lib/ptex-format": "./src/lib/ptex-format.ts",
+    "./shaders/noise.glsl": "./src/shaders/noise.glsl.ts",
+    "./shaders/common.glsl": "./src/shaders/common.glsl.ts",
+    "./shaders/triplanar.glsl": "./src/shaders/triplanar.glsl.ts",
+    "./shaders/brick.glsl": "./src/shaders/brick.glsl.ts",
+    "./shaders/stone.glsl": "./src/shaders/stone.glsl.ts",
+    "./shaders/weathering.glsl": "./src/shaders/weathering.glsl.ts"
   },
   "scripts": {
     "type-check": "tsc --noEmit"
